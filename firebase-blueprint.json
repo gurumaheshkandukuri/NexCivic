@@ -1,0 +1,190 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-aware properties and gamification points.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["Citizen", "Authority"] },
+        "avatar": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "department": { "type": "string" },
+        "zone": { "type": "string" },
+        "points": { "type": "integer" },
+        "badges": { "type": "array", "items": { "type": "string" } },
+        "reportCount": { "type": "integer" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLogin": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "Issue": {
+      "title": "Issue",
+      "description": "Representing a civic issue reported by a citizen or imported from survey data.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "location": { "type": "string" },
+        "address": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "zone": { "type": "string" },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High", "Critical"] },
+        "status": { "type": "string", "enum": ["Open", "In Progress", "Resolved"] },
+        "reportedBy": { "type": "string" },
+        "reporterName": { "type": "string" },
+        "reporterEmail": { "type": "string" },
+        "assignedTo": { "type": "string" },
+        "assignedToName": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "confirmations": { "type": "array", "items": { "type": "object" } },
+        "confirmCount": { "type": "integer" },
+        "isDuplicate": { "type": "boolean" },
+        "duplicateOf": { "type": "string" },
+        "duplicates": { "type": "array", "items": { "type": "string" } },
+        "hotScore": { "type": "number" },
+        "comments": { "type": "array", "items": { "type": "object" } },
+        "rating": { "type": "integer" },
+        "beforePhotoUrl": { "type": "string" },
+        "afterPhotoUrl": { "type": "string" },
+        "source": { "type": "string", "enum": ["app", "csv_import", "survey_import"] },
+        "importBatch": { "type": "string" },
+        "resolvedAt": { "type": "string", "format": "date-time" },
+        "acknowledgedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "category", "status", "createdAt"]
+    },
+    "SurveyResponse": {
+      "title": "SurveyResponse",
+      "description": "General city satisfaction survey answers imported via CSV.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "ageGroup": { "type": "string" },
+        "city": { "type": "string" },
+        "areaType": { "type": "string" },
+        "occupation": { "type": "string" },
+        "issueFrequency": { "type": "string" },
+        "civicIssues": { "type": "array", "items": { "type": "string" } },
+        "severityRating": { "type": "integer" },
+        "reportedBefore": { "type": "string" },
+        "whyNotReported": { "type": "string" },
+        "howReported": { "type": "string" },
+        "authoritySatisfaction": { "type": "integer" },
+        "resolutionTime": { "type": "string" },
+        "notifiedOfResolution": { "type": "string" },
+        "transparencyRating": { "type": "integer" },
+        "ownsSmartphone": { "type": "string" },
+        "appComfort": { "type": "integer" },
+        "desiredFeatures": { "type": "array", "items": { "type": "string" } },
+        "wouldUseNexCivic": { "type": "string" },
+        "npsScore": { "type": "integer" },
+        "biggestProblem": { "type": "string" },
+        "motivationToParticipate": { "type": "string" },
+        "suggestions": { "type": "string" },
+        "importBatch": { "type": "string" },
+        "importedAt": { "type": "string", "format": "date-time" },
+        "batchName": { "type": "string" }
+      },
+      "required": ["id", "importBatch", "importedAt"]
+    },
+    "ImportBatch": {
+      "title": "ImportBatch",
+      "description": "Logs details of a survey or issue data import batch.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "batchName": { "type": "string" },
+        "type": { "type": "string", "enum": ["issues", "survey"] },
+        "importedBy": { "type": "string" },
+        "rowCount": { "type": "integer" },
+        "successCount": { "type": "integer" },
+        "errorCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "batchName", "type", "createdAt"]
+    },
+    "Zone": {
+      "title": "Zone",
+      "description": "Specific administrative boundaries mapped to authority users.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "assignedAuthority": { "type": "string" },
+        "bounds": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Platform audit trailing for transparency and admin visibility.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "data": { "type": "object" },
+        "userId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "timestamp"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Real-time interactive alert sent to registered citizens or departments.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "message", "type", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles database."
+    },
+    "/issues/{issueId}": {
+      "schema": "Issue",
+      "description": "Platform reported and imported civic issues collection."
+    },
+    "/survey_responses/{responseId}": {
+      "schema": "SurveyResponse",
+      "description": "Verbatim citizen survey submissions collection."
+    },
+    "/import_batches/{batchId}": {
+      "schema": "ImportBatch",
+      "description": "Log records for batch imports."
+    },
+    "/zones/{zoneId}": {
+      "schema": "Zone",
+      "description": "Administrative boundaries mapping records."
+    },
+    "/activity_log/{logId}": {
+      "schema": "ActivityLog",
+      "description": "General system activity and audit trail logging."
+    },
+    "/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "Direct communication alerts stored for user delivery."
+    }
+  }
+}

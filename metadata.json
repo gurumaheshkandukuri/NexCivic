@@ -1,0 +1,11 @@
+{
+  "name": "Remix: NexCivic",
+  "description": "AI-Powered Civic Intelligence Platform for smart city reporting, automated issue routing, duplicate checking, and analytics",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

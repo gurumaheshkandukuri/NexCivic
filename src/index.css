@@ -1,0 +1,368 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+
+@theme {
+  --color-bg-void: var(--bg-void);
+  --color-bg-deep: var(--bg-deep);
+  --color-bg-mid: var(--bg-mid);
+  --color-bg-surface: var(--bg-surface);
+  --color-theme-cyan: var(--cyan);
+  --color-theme-blue: var(--blue);
+  --color-theme-indigo: var(--indigo);
+  --color-theme-violet: var(--violet);
+  --color-theme-green: var(--green);
+  --color-theme-orange: var(--orange);
+  --color-theme-red: var(--red);
+  --color-theme-yellow: var(--yellow);
+  --color-theme-text1: var(--text-1);
+  --color-theme-text2: var(--text-2);
+  --color-theme-text3: var(--text-3);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+:root {
+  /* Default: Dark mode values - Mapped to Geometric Balance (Dark slate scheme) */
+  --bg-void: #0b0f19; /* slate-950 */
+  --bg-deep: #0f172a; /* slate-900 */
+  --bg-mid: #1e293b;  /* slate-800 */
+  --bg-surface: #111827; /* gray-900 */
+  --cyan: #6366f1; /* Indigo-500 as primary */
+  --blue: #4f46e5; /* Indigo-600 as secondary */
+  --indigo: #818cf8; /* Indigo-400 */
+  --violet: #a5b4fc; /* Indigo-300 */
+  --green: #10b981; /* emerald-500 */
+  --orange: #f59e0b; /* amber-500 */
+  --red: #ef4444; /* rose-500 */
+  --yellow: #ffd60a;
+  --text-1: #f8fafc; /* slate-50 */
+  --text-2: #94a3b8; /* slate-400 */
+  --text-3: #475569; /* slate-600 */
+}
+
+/* Light mode overrides - Directly mapping the exact palette of Geometric Balance design HTML */
+[data-theme="light"] {
+  --bg-void: #f1f5f9; /* slate-100 */
+  --bg-deep: #f8fafc; /* slate-50 */
+  --bg-mid: #e2e8f0;  /* slate-200 */
+  --bg-surface: #ffffff; /* pure white */
+  --cyan: #4f46e5; /* Indigo-600 */
+  --blue: #3730a3; /* Indigo-800 */
+  --indigo: #6366f1; /* Indigo-500 */
+  --violet: #818cf8; /* Indigo-400 */
+  --green: #16a34a; /* green-600 */
+  --orange: #d97706; /* amber-600 */
+  --red: #dc2626; /* red-600 */
+  --yellow: #ca8a04;
+  --text-1: #0f172a; /* slate-900 */
+  --text-2: #475569; /* slate-600 */
+  --text-3: #94a3b8; /* slate-400 */
+}
+
+body {
+  background-color: var(--bg-void);
+  color: var(--text-1);
+  font-family: "Inter", sans-serif;
+  transition: background-color 0.4s ease, color 0.4s ease;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* HIGHLY GEOMETRIC SMART CITY GRID BACKGROUND */
+body::before {
+  content: "";
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: gridMove 30s linear infinite;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+[data-theme="light"] body::before {
+  background-image:
+    linear-gradient(rgba(79, 70, 229, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79, 70, 229, 0.03) 1px, transparent 1px);
+}
+
+@keyframes gridMove {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 40px 40px;
+  }
+}
+
+/* GEOMETRIC SOLID & SHARP BORDER STYLING (Replaced with Premium Claymorphic Tactile Structures) */
+.glass {
+  background: rgba(21, 28, 45, 0.93); /* Tinted, slightly opaque slate for rich inner shadow contrast */
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(25px) saturate(140%);
+  /* Claymorphism: Inner top-left white edge highlight, inner bottom-right deep obsidian depth, outset ambient drop shadow */
+  box-shadow: 
+    inset 4px 4px 8px rgba(255, 255, 255, 0.08), 
+    inset 1px 1px 2px rgba(255, 255, 255, 0.12),
+    inset -8px -8px 16px rgba(0, 0, 0, 0.55), 
+    0 15px 35px 0 rgba(0, 0, 0, 0.45);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 24px;
+}
+
+[data-theme="light"] .glass {
+  background: rgba(241, 245, 249, 0.96); /* Crisp clay-slate base */
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(25px) saturate(140%);
+  /* Claymorphism Light: Inner top-left white glaze, inner bottom-right soft slate clay indent, outset floating cloud shadow */
+  box-shadow: 
+    inset 4px 4px 8px rgba(255, 255, 255, 1), 
+    inset 1px 1px 2px rgba(255, 255, 255, 1),
+    inset -8px -8px 16px rgba(148, 163, 184, 0.32), 
+    0 15px 35px 0 rgba(148, 163, 184, 0.18);
+}
+
+.glass-interactive {
+  transition: all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.glass-interactive:hover {
+  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(21, 28, 45, 0.96);
+  /* Clay compression: compresses outset shadow, deepens the internal press depth for tactile physical responsive feedback */
+  box-shadow: 
+    inset 4px 4px 8px rgba(255, 255, 255, 0.12), 
+    inset 1px 1px 2px rgba(255, 255, 255, 0.18),
+    inset -10px -10px 20px rgba(0, 0, 0, 0.65), 
+    0 6px 15px 0 rgba(0, 0, 0, 0.35);
+  transform: translateY(2px) scale(0.99); /* Friendly squish effect */
+  filter: brightness(1.05);
+}
+
+[data-theme="light"] .glass-interactive:hover {
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 
+    inset 4px 4px 8px rgba(255, 255, 255, 1), 
+    inset 1px 1px 2px rgba(255, 255, 255, 1),
+    inset -10px -10px 20px rgba(148, 163, 184, 0.42), 
+    0 6px 15px 0 rgba(148, 163, 184, 0.12);
+  transform: translateY(2px) scale(0.99);
+}
+
+/* Claymorphic friendly puffy buttons */
+.clay-btn {
+  background: linear-gradient(135deg, var(--cyan), var(--blue));
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: white;
+  font-weight: 700;
+  box-shadow: 
+    inset 3px 3px 5px rgba(255, 255, 255, 0.4), 
+    inset -4px -4px 8px rgba(0, 0, 0, 0.3), 
+    0 8px 20px rgba(99, 102, 241, 0.3);
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.clay-btn:hover {
+  transform: translateY(1.5px) scale(0.98);
+  box-shadow: 
+    inset 3px 3px 5px rgba(255, 255, 255, 0.5), 
+    inset -6px -6px 12px rgba(0, 0, 0, 0.4), 
+    0 4px 10px rgba(99, 102, 241, 0.25);
+}
+
+.clay-btn:active {
+  transform: translateY(3px) scale(0.95);
+  box-shadow: 
+    inset 2px 2px 4px rgba(255, 255, 255, 0.3), 
+    inset -8px -8px 16px rgba(0, 0, 0, 0.5), 
+    0 2px 4px rgba(99, 102, 241, 0.1);
+}
+
+.clay-btn-secondary {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-1);
+  font-weight: 700;
+  box-shadow: 
+    inset 2px 2px 4px rgba(255, 255, 255, 0.1), 
+    inset -3px -3px 6px rgba(0, 0, 0, 0.45), 
+    0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+[data-theme="light"] .clay-btn-secondary {
+  background: rgba(241, 245, 249, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 
+    inset 2px 2px 4px rgba(255, 255, 255, 1), 
+    inset -4px -4px 8px rgba(148, 163, 184, 0.22), 
+    0 4px 12px rgba(148, 163, 184, 0.12);
+}
+
+.clay-btn-secondary:hover {
+  transform: translateY(1.5px) scale(0.98);
+  box-shadow: 
+    inset 2px 2px 4px rgba(255, 255, 255, 0.15), 
+    inset -4px -4px 8px rgba(0, 0, 0, 0.5), 
+    0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .clay-btn-secondary:hover {
+  box-shadow: 
+    inset 2px 2px 4px rgba(255, 255, 255, 1), 
+    inset -5px -5px 10px rgba(148, 163, 184, 0.28), 
+    0 2px 6px rgba(148, 163, 184, 0.08);
+}
+
+/* PULSING markers & indicators */
+.glow-cyan {
+  box-shadow: 0 0 12px var(--cyan);
+}
+
+.glow-red {
+  box-shadow: 0 0 12px var(--red);
+}
+
+/* FUTURISTIC PREMIUM SAAS ANIMATIONS, ORBS & VISUALS */
+@layer utilities {
+  .text-glow-cyan {
+    text-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+  }
+  .bg-mesh-gradient {
+    background-image: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+                      radial-gradient(at 50% 0%, rgba(79, 70, 229, 0.1) 0px, transparent 50%),
+                      radial-gradient(at 100% 0%, rgba(0, 229, 255, 0.08) 0px, transparent 50%);
+  }
+}
+
+.glow-gradient-card {
+  position: relative;
+  background: rgba(21, 28, 45, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 28px;
+  overflow: hidden;
+  box-shadow: 
+    inset 4px 4px 8px rgba(255, 255, 255, 0.08), 
+    inset -8px -8px 16px rgba(0, 0, 0, 0.55), 
+    0 15px 35px 0 rgba(0, 0, 0, 0.4);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] .glow-gradient-card {
+  background: rgba(241, 245, 249, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 
+    inset 4px 4px 8px rgba(255, 255, 255, 1), 
+    inset -8px -8px 16px rgba(148, 163, 184, 0.32), 
+    0 15px 35px 0 rgba(148, 163, 184, 0.18);
+}
+
+.glow-gradient-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.02) 40%, rgba(99, 102, 241, 0.15) 60%, rgba(0, 229, 255, 0.3));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.8;
+  transition: opacity 0.5s ease;
+}
+
+.glow-gradient-card:hover {
+  transform: translateY(2px) scale(0.99); /* Friendly squish effect */
+  box-shadow: 
+    inset 4px 4px 8px rgba(255, 255, 255, 0.12), 
+    inset -10px -10px 20px rgba(0, 0, 0, 0.65), 
+    0 6px 15px 0 rgba(0, 0, 0, 0.35);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+[data-theme="light"] .glow-gradient-card:hover {
+  box-shadow: 
+    inset 4px 4px 8px rgba(255, 255, 255, 1), 
+    inset -10px -10px 20px rgba(148, 163, 184, 0.42), 
+    0 6px 15px 0 rgba(148, 163, 184, 0.12);
+}
+
+.glow-gradient-card:hover::after {
+  opacity: 1;
+}
+
+/* Ambient Floating Orbs */
+.bg-orb-purple {
+  position: absolute;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(79, 70, 229, 0) 70%);
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+  animation: floatOrb 25s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.bg-orb-cyan {
+  position: absolute;
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(0, 229, 255, 0.1) 0%, rgba(0, 229, 255, 0) 75%);
+  border-radius: 50%;
+  filter: blur(50px);
+  pointer-events: none;
+  animation: floatOrb2 20s ease-in-out infinite alternate-reverse;
+  will-change: transform;
+}
+
+@keyframes floatOrb {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(80px, 40px) scale(1.15);
+  }
+}
+
+@keyframes floatOrb2 {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(-60px, -30px) scale(1.1);
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-void);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-mid);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cyan);
+}
+
+/* Custom leaflet popup stylings */
+.leaflet-popup-content-wrapper {
+  background: var(--bg-surface) !important;
+  color: var(--text-1) !important;
+  border: 1px solid var(--text-3) !important;
+  border-radius: 12px !important;
+}
+.leaflet-popup-tip {
+  background: var(--bg-surface) !important;
+}
