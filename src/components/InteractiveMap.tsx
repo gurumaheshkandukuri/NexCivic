@@ -23,7 +23,7 @@ export default function InteractiveMap({
   onConfirmIssue,
   latLngPicker = false,
   onLatLngSelect,
-  center = [19.0760, 72.8777], // Mumbai Center
+  center = [16.5062, 80.6480], // Andhra Pradesh Center
   zoom = 11,
   height = "520px",
   showHeatmap = false

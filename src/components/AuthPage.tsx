@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -32,6 +32,61 @@ interface AuthPageProps {
   theme?: "light" | "dark";
 }
 
+const locationData = {
+    "Telangana": {
+        "Adilabad": ["ADILABAD MUNICIPALITY", "BELLAMPALLE MUNICIPALITY", "BHAINSA MUNICIPALITY", "KAGHAZNAGAR MUNICIPALITY", "MANCHERIAL MUNICIPALITY", "MANDAMARRI MUNICIPALITY", "NIRMAL MUNICIPALITY"],
+        "Bhadradri Kothagudem": ["BHADRACHALAM MUNICIPALITY", "KOTHAGUDEM MUNICIPALITY", "MANUGURU MUNICIPALITY", "PALONCHA MUNICIPALITY", "SATHUPALLE MUNICIPALITY", "YELLANDU MUNICIPALITY"],
+        "Hanumakonda": ["HANUMAKONDA MUNICIPALITY", "PARKAL MUNICIPALITY", "WARANGAL MUNICIPAL CORPORATION (GWMC)"],
+        "Hyderabad": ["HYDERABAD (GHMC)"],
+        "Jagtial": ["JAGTIAL MUNICIPALITY", "KORUTLA MUNICIPALITY", "METPALLY MUNICIPALITY", "RAIKAL MUNICIPALITY"],
+        "Jangaon": ["JANGAON MUNICIPALITY", "STATION GHANPUR MUNICIPALITY"],
+        "Jayashankar Bhupalpally": ["BHUPALPALLY MUNICIPALITY"],
+        "Jogulamba Gadwal": ["GADWAL MUNICIPALITY", "ALAMPUR MUNICIPALITY", "AYIZA MUNICIPALITY"],
+        "Kamareddy": ["KAMAREDDY MUNICIPALITY", "BANSWADA MUNICIPALITY", "YELLAREDDY MUNICIPALITY"],
+        "Karimnagar": ["KARIMNAGAR MUNICIPAL CORPORATION", "CHOPPADANDI MUNICIPALITY", "HUZURABAD MUNICIPALITY", "JAMMIKUNTA MUNICIPALITY", "KOTHAPALLI MUNICIPALITY"],
+        "Khammam": ["KHAMMAM MUNICIPAL CORPORATION", "MADHIRA MUNICIPALITY", "SATHUPALLI MUNICIPALITY", "WYRA MUNICIPALITY"],
+        "Komaram Bheem": ["ASIFABAD MUNICIPALITY"],
+        "Mahabubabad": ["MAHABUBABAD MUNICIPALITY", "DORNAKAL MUNICIPALITY", "MARIPEDA MUNICIPALITY"],
+        "Mahabubnagar": ["MAHABUBNAGAR MUNICIPALITY", "BADEPALLY MUNICIPALITY", "BHOOTHPUR MUNICIPALITY", "JADCHERLA MUNICIPALITY"],
+        "Mancherial": ["MANCHERIAL MUNICIPALITY", "BELLAMPALLE MUNICIPALITY", "CHENNUR MUNICIPALITY", "KYATHANPALLY MUNICIPALITY", "LUXETTIPET MUNICIPALITY", "NASPUR MUNICIPALITY"],
+        "Medak": ["MEDAK MUNICIPALITY", "NARAYANKHED MUNICIPALITY", "RAMAYAMPET MUNICIPALITY", "SANGAREDDY MUNICIPALITY", "SADASIVPET MUNICIPALITY", "TOOPRAN MUNICIPALITY"],
+        "Medchal-Malkajgiri": ["BODUPPAL MUNICIPAL CORPORATION", "DAMMAIGUDA MUNICIPALITY", "GHATKESAR MUNICIPALITY", "JAWAHARNAGAR MUNICIPAL CORPORATION", "KOMPALLY MUNICIPALITY", "MEDCHAL MUNICIPALITY", "NAGARAM MUNICIPALITY", "PEERZADIGUDA MUNICIPAL CORPORATION", "POCHARAM MUNICIPALITY"],
+        "Mulugu": ["MULUGU MUNICIPALITY"],
+        "Nagarkurnool": ["NAGARKURNOOL MUNICIPALITY", "ACHAMPET MUNICIPALITY", "KALWAKURTHY MUNICIPALITY", "KOLLAPUR MUNICIPALITY"],
+        "Nalgonda": ["NALGONDA MUNICIPALITY", "CHITYAL MUNICIPALITY", "DEVARAKONDA MUNICIPALITY", "MIRYALGUDA MUNICIPALITY", "NAKREKAL MUNICIPALITY"],
+        "Narayanpet": ["NARAYANPET MUNICIPALITY", "KOSGI MUNICIPALITY", "MAKTHAL MUNICIPALITY"],
+        "Nirmal": ["NIRMAL MUNICIPALITY", "BHAINSA MUNICIPALITY", "KHANAPUR MUNICIPALITY"],
+        "Nizamabad": ["NIZAMABAD MUNICIPAL CORPORATION", "ARMOOR MUNICIPALITY", "BHIMGAL MUNICIPALITY", "BODHAN MUNICIPALITY"],
+        "Peddapalli": ["PEDDAPALLI MUNICIPALITY", "MANTHANI MUNICIPALITY", "RAMAGUNDAM MUNICIPAL CORPORATION", "SULTANABAD MUNICIPALITY"],
+        "Rajanna Sircilla": ["SIRCILLA MUNICIPALITY", "VEMULAWADA MUNICIPALITY"],
+        "Ranga Reddy": ["ADIBATLA MUNICIPALITY", "AMANGAL MUNICIPALITY", "BADANGPET MUNICIPAL CORPORATION", "IBRAHIMPATNAM MUNICIPALITY", "JALPALLY MUNICIPALITY", "KOTHUR MUNICIPALITY", "MANCHAL MUNICIPALITY", "MEERPET MUNICIPAL CORPORATION", "NARSINGI MUNICIPALITY", "PEDDA AMBERPET MUNICIPALITY", "SHADNAGAR MUNICIPALITY", "SHAMSHABAD MUNICIPALITY", "SHANKARPALLY MUNICIPALITY", "THUKKUGUDA MUNICIPALITY", "TURKAYAMJAL MUNICIPALITY"],
+        "Sangareddy": ["SANGAREDDY MUNICIPALITY", "AMEENPUR MUNICIPALITY", "BOLLAVARAM MUNICIPALITY", "PATANCHERU MUNICIPALITY", "SADASIVPET MUNICIPALITY", "TELLAPUR MUNICIPALITY", "ZAHEERABAD MUNICIPALITY"],
+        "Siddipet": ["SIDDIPET MUNICIPALITY", "CHERIYAL MUNICIPALITY", "DUBBAK MUNICIPALITY", "GAJWEL-PRAGNAPUR MUNICIPALITY", "HUSNABAD MUNICIPALITY"],
+        "Suryapet": ["SURYAPET MUNICIPALITY", "HUZURNAGAR MUNICIPALITY", "KODAD MUNICIPALITY", "NEREDCHERLA MUNICIPALITY", "THIRUMALAGIRI MUNICIPALITY"],
+        "Vikarabad": ["VIKARABAD MUNICIPALITY", "KODANGAL MUNICIPALITY", "PARIGI MUNICIPALITY", "TANDUR MUNICIPALITY"],
+        "Wanaparthy": ["WANAPARTHY MUNICIPALITY", "AMARCHINTA MUNICIPALITY", "ATMAKUR MUNICIPALITY", "KOTHAKOTA MUNICIPALITY", "PEBBAIR MUNICIPALITY"],
+        "Warangal": ["WARANGAL MUNICIPAL CORPORATION (GWMC)", "NARSAMPET MUNICIPALITY", "PARKAL MUNICIPALITY", "WARDHANNAPET MUNICIPALITY"],
+        "Yadadri Bhuvanagiri": ["BHONGIR MUNICIPALITY", "ALAIR MUNICIPALITY", "CHOUTUPPAL MUNICIPALITY", "MOTHkur MUNICIPALITY", "POCHAMPALLY MUNICIPALITY", "YADAGIRIGUTTA MUNICIPALITY"]
+    },
+    "Andhra Pradesh": {
+        "Anantapur": ["ANANTAPUR MUNICIPAL CORPORATION", "DHARMAVARAM MUNICIPALITY", "GOOTY MUNICIPALITY", "GUNTAKAL MUNICIPALITY", "HINDUPUR MUNICIPALITY", "KADIRI MUNICIPALITY", "KALYANDURG MUNICIPALITY", "PAMIDI MUNICIPALITY", "PUTTAPARTHI MUNICIPALITY", "RAYADURG MUNICIPALITY", "TADPATRI MUNICIPALITY"],
+        "Chittoor": ["CHITTOOR MUNICIPAL CORPORATION", "MADANAPALLE MUNICIPALITY", "NAGARI MUNICIPALITY", "PALAMANER MUNICIPALITY", "PUNGANUR MUNICIPALITY", "PUTTUR MUNICIPALITY", "SRIKALAHASTI MUNICIPALITY", "TIRUPATI MUNICIPAL CORPORATION"],
+        "East Godavari": ["AMALAPURAM MUNICIPALITY", "KAKINADA MUNICIPAL CORPORATION", "MANDAPETA MUNICIPALITY", "PEDDAPURAM MUNICIPALITY", "PITHAPURAM MUNICIPALITY", "RAMACHANDRAPURAM MUNICIPALITY", "RAJAHMUNDRY MUNICIPAL CORPORATION", "SAMALKOT MUNICIPALITY", "TUNI MUNICIPALITY"],
+        "Guntur": ["GUNTUR MUNICIPAL CORPORATION", "BAPATLA MUNICIPALITY", "CHILAKALURIPET MUNICIPALITY", "MANGALAGIRI MUNICIPALITY", "NARASARAOPET MUNICIPALITY", "PONNUR MUNICIPALITY", "REPALLE MUNICIPALITY", "SATTENAPALLE MUNICIPALITY", "TENALI MUNICIPALITY", "VINUKONDA MUNICIPALITY"],
+        "Krishna": ["VIJAYAWADA MUNICIPAL CORPORATION", "GUDIVADA MUNICIPALITY", "JAGGAYYAPET MUNICIPALITY", "MACHILIPATNAM MUNICIPAL CORPORATION", "NUZVID MUNICIPALITY", "PEDANA MUNICIPALITY", "TIRUVURU MUNICIPALITY", "VUYYURU MUNICIPALITY"],
+        "Kurnool": ["KURNOOL MUNICIPAL CORPORATION", "ADONI MUNICIPALITY", "ALLAGADDA MUNICIPALITY", "ATMAKUR MUNICIPALITY", "DHONE MUNICIPALITY", "GUDUR MUNICIPALITY", "NANDIKOTKUR MUNICIPALITY", "NANDYAL MUNICIPALITY", "YEMMIGANUR MUNICIPALITY"],
+        "Prakasam": ["ONGOLE MUNICIPAL CORPORATION", "ADDANKI MUNICIPALITY", "CHIRALA MUNICIPALITY", "GIDDALUR MUNICIPALITY", "KANDUKUR MUNICIPALITY", "MARKAPUR MUNICIPALITY"],
+        "Srikakulam": ["SRIKAKULAM MUNICIPAL CORPORATION", "AMADALAVALASA MUNICIPALITY", "ICHCHAPURAM MUNICIPALITY", "PALAKONDA NAGAR PANCHAYAT", "PALASA KASIBUGGA MUNICIPALITY"],
+        "Sri Potti Sriramulu Nellore": ["NELLORE MUNICIPAL CORPORATION", "ATMAKUR MUNICIPALITY", "GUDUR MUNICIPALITY", "KAVALI MUNICIPALITY", "SULLURPET MUNICIPALITY", "VENKATAGIRI MUNICIPALITY"],
+        "Visakhapatnam": ["VISAKHAPATNAM MUNICIPAL CORPORATION (GVMC)", "ANAKAPALLE MUNICIPALITY", "BHEEMUNIPATNAM MUNICIPALITY", "NARASIPATNAM MUNICIPALITY", "YELAMANCHILI MUNICIPALITY"],
+        "Vizianagaram": ["VIZIANAGARAM MUNICIPAL CORPORATION", "BOBBILI MUNICIPALITY", "PARVATHIPURAM MUNICIPALITY", "SALUR MUNICIPALITY"],
+        "West Godavari": ["ELURU MUNICIPAL CORPORATION", "BHIMAVARAM MUNICIPALITY", "JANGAMPAREGUDA MUNICIPALITY", "KOVUR MUNICIPALITY", "NARASAPURAM MUNICIPALITY", "NIDADAVOLE MUNICIPALITY", "PALAKOLLU MUNICIPALITY", "TADEPALLIGUDEM MUNICIPALITY", "TANUKU MUNICIPALITY"],
+        "Y.S.R. Kadapa": ["KADAPA MUNICIPAL CORPORATION", "BADVEL MUNICIPALITY", "JAMMALAMADUGU MUNICIPALITY", "MYDUKUR MUNICIPALITY", "PRODDATUR MUNICIPALITY", "PULIVENDULA MUNICIPALITY", "RAYACHOTI MUNICIPALITY", "YERRAGUNTLA MUNICIPALITY"]
+    }
+};
+
+const states = Object.keys(locationData);
+
 export default function AuthPage({ onSuccess, theme = "dark" }: AuthPageProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState("");
@@ -49,8 +104,29 @@ export default function AuthPage({ onSuccess, theme = "dark" }: AuthPageProps) {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
-  const [department, setDepartment] = useState("");
-  const [zone, setZone] = useState("Zone A");
+  const [state, setState] = useState(states[0]);
+  const [district, setDistrict] = useState("");
+  const [ulb, setUlb] = useState("");
+
+  const [districts, setDistricts] = useState<string[]>(Object.keys(locationData[states[0] as keyof typeof locationData]));
+  const [ulbsList, setUlbsList] = useState<string[]>([]);
+
+  useEffect(() => {
+    const districtList = Object.keys(locationData[state as keyof typeof locationData]);
+    setDistricts(districtList);
+    setDistrict("");
+    setUlb("");
+  }, [state]);
+
+  useEffect(() => {
+    if (district) {
+      const ulbList = locationData[state as keyof typeof locationData][district] || [];
+      setUlbsList(ulbList);
+    } else {
+      setUlbsList([]);
+    }
+    setUlb("");
+  }, [district, state]);
 
   const handleAuthAction = async (action: () => Promise<any>) => {
     setLoading(true);
@@ -104,8 +180,9 @@ export default function AuthPage({ onSuccess, theme = "dark" }: AuthPageProps) {
                 email: googleUserForSignup.email,
                 role,
                 phone,
-                department: role !== "Citizen" ? department : "",
-                zone,
+                state,
+                district,
+                ulb,
                 points: role === "Citizen" ? 20 : 0,
                 avatar: googleUserForSignup.photoURL
             });
@@ -120,8 +197,9 @@ export default function AuthPage({ onSuccess, theme = "dark" }: AuthPageProps) {
             email,
             role,
             phone,
-            department: role !== "Citizen" ? department : "",
-            zone,
+            state,
+            district,
+            ulb,
             points: role === "Citizen" ? 20 : 0,
           });
           setStep(3);
@@ -385,29 +463,39 @@ export default function AuthPage({ onSuccess, theme = "dark" }: AuthPageProps) {
                   />
                 </div>
 
-                {(role === "Authority" || role === "MunicipalityMgr") && (
-                  <div className="flex flex-col gap-1.5 animate-fadeIn">
-                    <label className="text-[10px] uppercase font-bold text-gray-500">Government Department / Office Office</label>
-                    <input 
-                      type="text" 
-                      required
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      placeholder="e.g. Roads & Utilities or HQ Office"
-                      className="p-2.5 bg-[rgba(255,255,255,0.02)] border border-gray-700/50 rounded-xl outline-none text-xs text-[var(--text-1)]"
-                    />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] uppercase font-bold text-gray-500">State</label>
+                    <select
+                      value={state}
+                      onChange={(e) => setState(e.target.value)}
+                      className="p-2.5 bg-[var(--bg-void)] border border-gray-700/50 rounded-xl outline-none text-xs text-[var(--text-1)]"
+                    >
+                      {states.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
                   </div>
-                )}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] uppercase font-bold text-gray-500">District</label>
+                    <select
+                      value={district}
+                      onChange={(e) => setDistrict(e.target.value)}
+                      className="p-2.5 bg-[var(--bg-void)] border border-gray-700/50 rounded-xl outline-none text-xs text-[var(--text-1)]"
+                    >
+                      <option value="">Select District</option>
+                      {districts.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] uppercase font-bold text-gray-500">Assigned Municipal Zone</label>
+                  <label className="text-[10px] uppercase font-bold text-gray-500">ULB</label>
                   <select
-                    value={zone}
-                    onChange={(e) => setZone(e.target.value)}
+                    value={ulb}
+                    onChange={(e) => setUlb(e.target.value)}
                     className="p-2.5 bg-[var(--bg-void)] border border-gray-700/50 rounded-xl outline-none text-xs text-[var(--text-1)]"
                   >
-                    <option value="Zone A">Zone A (Wes suburban)</option>
-                    <option value="Zone B">Zone B (Central division)</option>
+                    <option value="">Select ULB</option>
+                    {ulbsList.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
 

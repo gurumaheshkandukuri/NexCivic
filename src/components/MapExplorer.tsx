@@ -226,10 +226,10 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
               <div
                 key={issue.id}
                 onClick={() => setSelectedIssue(issue)}
-                className={`p-3 rounded-2xl glass-interactive hover:scale-1 w-full text-left cursor-pointer border flex flex-col gap-2 ${
-                  selectedIssue?.id === issue.id 
-                    ? "border-[var(--cyan)] bg-[var(--cyan)]/[0.02]" 
-                    : "border-transparent"
+                className={`p-3 rounded-2xl w-full text-left cursor-pointer border flex flex-col gap-2 transition-colors ${
+                  selectedIssue?.id === issue.id
+                    ? "border-[var(--cyan)] bg-[var(--cyan)]/[0.02]"
+                    : "border-transparent hover:bg-slate-800/50"
                 }`}
               >
                 <div className="flex items-center gap-1.5 justify-between">
@@ -267,6 +267,7 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
           selectedIssueId={selectedIssue?.id}
           onSelectIssue={(issue) => setSelectedIssue(issue)}
           height="100%"
+          center={[16.5062, 80.6480]}
         />
 
         {/* Floating pop-up overlay if details selected */}
