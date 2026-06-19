@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase-init";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 import { 
   getUserProfile, 
   subscribeAllIssues, 
@@ -52,24 +52,6 @@ export default function App() {
   useEffect(() => {
     const initializeUser = async () => {
       setLoading(true);
-      const savedUserJson = localStorage.getItem("nex_civic_simulated_user");
-      if (savedUserJson) {
-        try {
-          const profile = JSON.parse(savedUserJson);
-          // Refetch/sync profile from Firestore if it exists to get fresh stats/points, else fallback
-          const syncedProfile = await getUserProfile(profile.id);
-          if (syncedProfile) {
-            setUser(syncedProfile);
-            localStorage.setItem("nex_civic_simulated_user", JSON.stringify(syncedProfile));
-          } else {
-            setUser(profile);
-          }
-          setLoading(false);
-          return;
-        } catch (err) {
-          console.warn("Failed syncing stored simulated user:", err);
-        }
-      }
 
       const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
         if (firebaseUser) {
@@ -195,7 +177,6 @@ export default function App() {
                 <CitizenDashboard 
                   user={user} 
                   issues={issues} 
-                  onRefresh={handleRefresh} 
                 />
               ) : user.role === "MunicipalityMgr" ? (
                 <MunicipalityMgrDashboard 
@@ -221,9 +202,6 @@ export default function App() {
             <ProfilePage 
               user={user} 
               issues={issues} 
-              onRefresh={async () => {
-                // Instantly sync simulated profile state or fetch the updated one
-              }} 
               theme={theme} 
             />
           </div>
@@ -238,57 +216,59 @@ export default function App() {
       </main>
 
       {/* Official Re-Architected Premium Glassmorphic Scroll-Reveal Footer */}
-      <motion.footer 
-        initial={{ opacity: 0, y: 30 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-100px" }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        className="border-t border-slate-200/30 dark:border-white/10 bg-slate-100/60 dark:bg-[#0b0f19]/75 backdrop-blur-xl py-16 px-6 md:px-12 mt-20 relative z-10 glass"
-      >
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-10 items-start">
-          
-          {/* Brand block (Span 5) */}
-          <div className="md:col-span-5 flex flex-col gap-4 text-center md:text-left">
-            <div className="flex justify-center md:justify-start">
-              <Logo size="md" themeType={theme} />
-            </div>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 max-w-sm leading-relaxed font-sans font-medium">
-              NexCivic is the next-generation metropolitan smart coordinate telemetry and semantic report clustering protocol. Fostering resilient, transparent, and responsive urban infrastructure.
-            </p>
-            <div className="flex items-center justify-center md:justify-start gap-2 mt-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[9px] font-mono tracking-widest font-bold text-slate-500 dark:text-slate-400 uppercase">WARD ALLOCATED NODE v2.4</span>
-            </div>
-          </div>
-
-          {/* Quick Navigation grid (Span 4) */}
-          <div className="md:col-span-4 flex flex-col gap-4 text-center md:text-left">
-            <span className="text-[10px] font-mono uppercase font-black text-slate-500 dark:text-slate-450 tracking-wider">Smart Layers</span>
-            <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 text-xs font-semibold text-slate-600 dark:text-slate-400">
-              <button onClick={() => setActiveTab("landing")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">About Paradigm</button>
-              <button onClick={() => setActiveTab("map")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Smart Map</button>
-              <button onClick={() => setActiveTab("telangana")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Telangana Desk</button>
-              <button onClick={() => setActiveTab("dashboard")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Staff Terminal</button>
-              <span className="cursor-not-allowed text-center md:text-left opacity-50">Water supply lines</span>
-              <span className="cursor-not-allowed text-center md:text-left opacity-50 font-normal">Thermal Heatmap</span>
-            </div>
-          </div>
-
-          {/* Security details & Municipalities (Span 3) */}
-          <div className="md:col-span-3 flex flex-col gap-4 items-center md:items-end text-center md:text-right">
-            <div className="flex flex-col gap-1 font-mono text-[9px] text-slate-500 dark:text-slate-400">
-              <span className="font-extrabold tracking-wider uppercase text-slate-500 dark:text-slate-300">© 2026 NEXCIVIC SYSTEMS</span>
-              <span>ALL RIGHTS RESERVED GLOBALLY</span>
-            </div>
+      {!loading && 
+        <motion.footer 
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="border-t border-slate-200/30 dark:border-white/10 bg-slate-100/60 dark:bg-[#0b0f19]/75 backdrop-blur-xl py-16 px-6 md:px-12 mt-20 relative z-10 glass"
+        >
+            <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-10 items-start">
             
-            <div className="flex items-center gap-1.5 p-2 rounded-xl bg-cyan-500/5 dark:bg-cyan-400/5 border border-cyan-500/10 dark:border-cyan-400/10 text-[9px] font-mono text-cyan-600 dark:text-cyan-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-              <span>SECURED BY FIRESTORE DIRECT</span>
+            {/* Brand block (Span 5) */}
+            <div className="md:col-span-5 flex flex-col gap-4 text-center md:text-left">
+                <div className="flex justify-center md:justify-start">
+                <Logo size="md" themeType={theme} />
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 max-w-sm leading-relaxed font-sans font-medium">
+                NexCivic is the next-generation metropolitan smart coordinate telemetry and semantic report clustering protocol. Fostering resilient, transparent, and responsive urban infrastructure.
+                </p>
+                <div className="flex items-center justify-center md:justify-start gap-2 mt-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[9px] font-mono tracking-widest font-bold text-slate-500 dark:text-slate-400 uppercase">WARD ALLOCATED NODE v2.4</span>
+                </div>
             </div>
-          </div>
 
-        </div>
-      </motion.footer>
+            {/* Quick Navigation grid (Span 4) */}
+            <div className="md:col-span-4 flex flex-col gap-4 text-center md:text-left">
+                <span className="text-[10px] font-mono uppercase font-black text-slate-500 dark:text-slate-450 tracking-wider">Smart Layers</span>
+                <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                <button onClick={() => setActiveTab("landing")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">About Paradigm</button>
+                <button onClick={() => setActiveTab("map")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Smart Map</button>
+                <button onClick={() => setActiveTab("telangana")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Telangana Desk</button>
+                <button onClick={() => setActiveTab("dashboard")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Staff Terminal</button>
+                <span className="cursor-not-allowed text-center md:text-left opacity-50">Water supply lines</span>
+                <span className="cursor-not-allowed text-center md:text-left opacity-50 font-normal">Thermal Heatmap</span>
+                </div>
+            </div>
+
+            {/* Security details & Municipalities (Span 3) */}
+            <div className="md:col-span-3 flex flex-col gap-4 items-center md:items-end text-center md:text-right">
+                <div className="flex flex-col gap-1 font-mono text-[9px] text-slate-500 dark:text-slate-400">
+                <span className="font-extrabold tracking-wider uppercase text-slate-500 dark:text-slate-300">© 2026 NEXCIVIC SYSTEMS</span>
+                <span>ALL RIGHTS RESERVED GLOBALLY</span>
+                </div>
+                
+                <div className="flex items-center gap-1.5 p-2 rounded-xl bg-cyan-500/5 dark:bg-cyan-400/5 border border-cyan-500/10 dark:border-cyan-400/10 text-[9px] font-mono text-cyan-600 dark:text-cyan-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                <span>SECURED BY FIRESTORE DIRECT</span>
+                </div>
+            </div>
+
+            </div>
+        </motion.footer>
+        }
 
     </div>
   );

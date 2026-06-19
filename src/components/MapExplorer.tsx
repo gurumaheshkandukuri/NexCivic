@@ -9,7 +9,8 @@ import {
   CheckCircle, 
   CheckCircle2, 
   X,
-  Plus
+  Plus,
+  Navigation
 } from "lucide-react";
 import { Issue, UserProfile } from "../types";
 import InteractiveMap from "./InteractiveMap";
@@ -22,6 +23,21 @@ interface MapExplorerProps {
   onRefresh: () => void;
 }
 
+// Haversine formula for distance calculation
+const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    ;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
+  const d = R * c; // Distance in km
+  return d;
+}
+
 export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProps) {
   const [viewMode, setViewMode] = useState<"incidents" | "telangana">("incidents");
   const [searchTerm, setSearchTerm] = useState("");
@@ -29,7 +45,9 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [selectedPriority, setSelectedPriority] = useState("All");
   const [selectedZone, setSelectedZone] = useState("All");
-  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [filterByNearby, setFilterByNearby] = useState(false);
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
 
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
 
@@ -46,6 +64,11 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
     const matchesPriority = selectedPriority === "All" || issue.priority === selectedPriority;
     const matchesZone = selectedZone === "All" || issue.zone === selectedZone;
 
+    if (filterByNearby && userLocation) {
+        const distance = getDistance(userLocation.lat, userLocation.lng, issue.lat, issue.lng);
+        return distance <= 5; // 5km radius
+    }
+
     return matchesSearch && matchesCategory && matchesStatus && matchesPriority && matchesZone;
   });
 
@@ -61,6 +84,23 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
     const updated = issues.find(i => i.id === issueId);
     if (updated) setSelectedIssue(updated);
   };
+
+  const toggleNearbyFilter = () => {
+    if (!filterByNearby) {
+      setLocationLoading(true);
+      navigator.geolocation.getCurrentPosition(position => {
+        setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setFilterByNearby(true);
+        setLocationLoading(false);
+      }, () => {
+        alert("Could not get your location. Please ensure location services are enabled.");
+        setLocationLoading(false);
+      });
+    } else {
+      setFilterByNearby(false);
+      setUserLocation(null);
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 flex flex-col text-left">
@@ -159,30 +199,22 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
             </select>
           </div>
 
-          {/* Futuristic Glowing Heatmap Toggle Switch */}
-          <div className="flex items-center justify-between p-2.5 rounded-xl bg-orange-500/5 border border-orange-500/10 hover:border-orange-500/20 transition-all mt-1">
-            <div className="flex items-center gap-2">
-              <Flame className={`w-4 h-4 transition-all ${showHeatmap ? "text-orange-500 animate-pulse scale-110" : "text-gray-500"}`} />
-              <div className="text-left">
-                <span className="block text-xs font-bold text-[var(--text-1)]">Thermal Heatmap</span>
-                <span className="block text-[8px] text-gray-400">Plot report density concentration</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowHeatmap(!showHeatmap)}
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-orange-500/20 transition-colors duration-200 ease-in-out focus:outline-none ${
-                showHeatmap ? "bg-orange-500/90 shadow-[0_0_12px_rgba(249,115,22,0.5)]" : "bg-gray-800"
-              }`}
+          <button
+            onClick={toggleNearbyFilter}
+            className={`p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer border ${
+                filterByNearby 
+                ? "bg-blue-500/15 text-blue-400 border-blue-500/20"
+                : "text-gray-400 hover:text-white border-gray-700/50"
+            }`}
             >
-              <span
-                className={`pointer-events-none inline-block h-3.5 w-3.5 mt-0.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  showHeatmap ? "translate-x-4.5" : "translate-x-0.5"
-                }`}
-              />
+            {locationLoading ? (
+                <><Flame className="w-4 h-4 animate-spin"/> Fetching Location...</>
+            ) : filterByNearby ? (
+                <><Navigation className="w-4 h-4"/> Showing Nearby Issues (5km)</>
+            ) : (
+                <><Navigation className="w-4 h-4"/> Show Nearby Issues</>
+            )}
             </button>
-          </div>
-
         </div>
 
         {/* Scrollable list items details */}
@@ -235,7 +267,6 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
           selectedIssueId={selectedIssue?.id}
           onSelectIssue={(issue) => setSelectedIssue(issue)}
           height="100%"
-          showHeatmap={showHeatmap}
         />
 
         {/* Floating pop-up overlay if details selected */}

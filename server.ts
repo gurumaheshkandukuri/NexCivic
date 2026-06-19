@@ -48,8 +48,8 @@ app.post("/api/gemini/categorize", async (req, res) => {
 
   try {
     const prompt = `You are a professional civic issue classifier.
-Given this issue title: "${title || 'N/A'}"
-And description: "${description || 'N/A'}"
+Given this issue title: \"${title || 'N/A'}\"
+And description: \"${description || 'N/A'}\"
 
 Classify into EXACTLY ONE category:
 [Pothole, Garbage Overflow, Water Leakage, Street Light, Drainage, Infrastructure, Other]
@@ -96,7 +96,7 @@ app.post("/api/gemini/suggest-department", async (req, res) => {
   }
 
   try {
-    const prompt = `You are a civic department categorizer. Given the title "${title || "N/A"}" and description "${description || "N/A"}", determine which department should handle this civic issue.
+    const prompt = `You are a civic department categorizer. Given the title \"${title || "N/A"}\" and description \"${description || "N/A"}\", determine which department should handle this civic issue.
 Choose EXACTLY ONE from this list:
 [Sanitation, Roads, Utilities, Other]
 
@@ -189,12 +189,12 @@ app.post("/api/gemini/check-duplicates", async (req, res) => {
 
   try {
     const prompt = `New reported civic issue:
-Title: "${newIssue.title}"
-Description: "${newIssue.description}"
-Category: "${newIssue.category}"
+Title: \"${newIssue.title}\"
+Description: \"${newIssue.description}\"
+Category: \"${newIssue.category}\"
 
 Existing nearby problems:
-${existingIssues.map((issue, idx) => `${idx + 1}. [ID: ${issue.id}] Title: "${issue.title}", Description: "${issue.description}", Category: "${issue.category}"`).join("\n")}
+${existingIssues.map((issue, idx) => `${idx + 1}. [ID: ${issue.id}] Title: \"${issue.title}\", Description: \"${issue.description}\", Category: \"${issue.category}\"`).join("\n")}
 
 Determine if any existing issue describes the identical physical/structural problem.
 Only return similarity if they are highly similar. Let the similarity_score be a value from 0 to 1.
@@ -336,19 +336,19 @@ app.post("/api/gemini/survey-insights", async (req, res) => {
 
 // Serve frontend assets
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
+  // if (process.env.NODE_ENV !== "production") {
+  //   const vite = await createViteServer({
+  //     server: { middlewareMode: true },
+  //     appType: "spa",
+  //   });
+  //   app.use(vite.middlewares);
+  // } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
-  }
+  // }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);

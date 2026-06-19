@@ -1,10 +1,10 @@
 {
-  "projectId": "remixed-project-id",
-  "appId": "remixed-app-id",
-  "apiKey": "remixed-api-key",
-  "authDomain": "remixed-auth-domain",
-  "firestoreDatabaseId": "remixed-firestore-database-id",
-  "storageBucket": "remixed-storage-bucket",
-  "messagingSenderId": "remixed-messaging-sender-id",
-  "measurementId": "remixed-measurement-id"
+  "projectId": "nexcivic-49dbe",
+  "appId": "1:296161779327:web:69522e4e1043d49a59694a",
+  "apiKey": "AIzaSyCl4mQ-SkSV-u63hspS5-eDM5x83a13_ig",
+  "authDomain": "nexcivic-49dbe.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "nexcivic-49dbe.firebasestorage.app",
+  "messagingSenderId": "296161779327",
+  "measurementId": "G-Q7Y2KKXC1W"
 }

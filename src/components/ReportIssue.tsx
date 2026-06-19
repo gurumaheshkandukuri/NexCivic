@@ -3,7 +3,6 @@ import {
   Upload, 
   MapPin, 
   FileText, 
-  Sparkles, 
   Trash2, 
   CheckCircle2, 
   AlertTriangle,
@@ -14,7 +13,7 @@ import {
   RefreshCw,
   Video
 } from "lucide-react";
-import { createIssue, checkAndSeedDatabase } from "../dbService";
+import { createIssue, confirmIssue } from "../dbService";
 import { UserProfile, Issue } from "../types";
 import confetti from "canvas-confetti";
 
@@ -114,12 +113,8 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
   const [lng, setLng] = useState(72.8468);
   const [address, setAddress] = useState("");
 
-  const [suggestedDeptPreview, setSuggestedDeptPreview] = useState<string | null>(null);
-
   const [image, setImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [confindence, setConfidence] = useState<number | null>(null);
 
   // Live GPS tracking Leaflet map states & refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -257,55 +252,6 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
     };
   }, []);
 
-  // call server-side Gemini Vision API proxy
-  const handleAIAnalysis = async () => {
-    if (!image) return;
-    setAnalyzing(true);
-
-    try {
-      const base64Data = image.split(",")[1];
-      const res = await fetch("/api/gemini/analyze-photo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64Data })
-      });
-      const data = await res.json();
-      
-      if (data.category) setCategory(data.category);
-      if (data.priority) setPriority(data.priority);
-      if (data.description) setDescription(data.description);
-      if (data.confidence) setConfidence(data.confidence);
-
-      // Auto predict and tag suggested department
-      try {
-        const depRes = await fetch("/api/gemini/suggest-department", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: data.category, description: data.description || data.category })
-        });
-        if (depRes.ok) {
-          const depData = await depRes.json();
-          if (depData.suggestedDepartment) {
-            setSuggestedDeptPreview(depData.suggestedDepartment);
-          }
-        }
-      } catch (err) {
-        console.error("AI department routing preview error:", err);
-      }
-
-      // Simple visual alert feedback
-      confetti({
-        particleCount: 20,
-        spread: 30,
-        origin: { y: 0.8 }
-      });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
   // Helper function using browser Geolocation API and reverse geocoding to pre-populate Landmark, District, and City
   const fetchAndPopulateLocationDetails = () => {
     setGpsStatus("connecting");
@@ -431,36 +377,8 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
     }
   }, [lat, lng]);
 
-  // Submit Issue
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title) return;
-
-    if (similarIssue && !showDuplicateModal) {
-      setShowDuplicateModal(true);
-      return;
-    }
-
+  const proceedWithSubmission = async () => {
     setLoading(true);
-
-    let finalDept = suggestedDeptPreview || "Other";
-    if (!suggestedDeptPreview) {
-      try {
-        const depRes = await fetch("/api/gemini/suggest-department", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, description })
-        });
-        if (depRes.ok) {
-          const depData = await depRes.json();
-          if (depData.suggestedDepartment) {
-            finalDept = depData.suggestedDepartment;
-          }
-        }
-      } catch (err) {
-        console.error("AI automated department routing failed:", err);
-      }
-    }
 
     const fullDetailsLocation = `${landmark ? `${landmark}, ` : ""}${district}, ${city}`;
 
@@ -479,7 +397,7 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
         reporterName: user.name,
         reporterEmail: user.email,
         imageUrl: image || "",
-        suggestedDepartment: finalDept
+        suggestedDepartment: ''
       });
 
       setCreatedId(id);
@@ -503,7 +421,28 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
       setLoading(false);
       setShowDuplicateModal(false);
     }
+  }
+
+  // Submit Issue
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title) return;
+
+    if (similarIssue && !showDuplicateModal) {
+      setShowDuplicateModal(true);
+      return;
+    }
+
+    proceedWithSubmission();
   };
+
+  const handleUpvoteDuplicate = async () => {
+    if (!similarIssue) return;
+    await confirmIssue(similarIssue.id, user.id, user.name);
+    confetti({ particleCount: 30 });
+    onSuccess();
+    setActiveTab("dashboard");
+  }
 
   if (success) {
     return (
@@ -689,19 +628,6 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
             </div>
           )}
 
-          {/* AI Analyse Button */}
-          {image && (
-            <button
-              type="button"
-              onClick={handleAIAnalysis}
-              disabled={analyzing}
-              className="w-full py-3 clay-btn disabled:from-gray-700 disabled:to-gray-800 text-white font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-2 text-xs transition-all cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4 text-white animate-spin" style={{ animationDuration: analyzing ? "2s" : "0s" }} />
-              {analyzing ? "Gemini Parsing Visuals..." : "✨ Analyze with AI"}
-            </button>
-          )}
-
           {/* Real-time exact telemetry map */}
           <div className="glass p-4 rounded-3xl border border-slate-200/50 dark:border-white/10 flex flex-col gap-3 text-left">
             <div className="flex items-center justify-between">
@@ -743,13 +669,6 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
         {/* Right column - form metrics */}
         <div className="lg:col-span-7 glass rounded-3xl p-6 md:p-8 border border-[rgba(255,255,255,0.06)] flex flex-col gap-5 text-left relative">
           
-          {confindence !== null && (
-            <div className="absolute top-4 right-4 px-3 py-1 rounded-full bg-[var(--cyan)]/10 border border-[var(--cyan)]/25 text-[var(--cyan)] font-bold font-mono text-[9px] flex items-center gap-1 shadow-lg animate-pulse">
-              <Sparkles className="w-3 h-3 text-[var(--cyan)] animate-spin" />
-              <span>AI PREDICTED: {confindence}% CONFIDENCE</span>
-            </div>
-          )}
-
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] uppercase font-bold text-[var(--text-2)] tracking-wider">
               Issue Headline (Title)
@@ -904,17 +823,6 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
             />
           </div>
 
-          {suggestedDeptPreview && (
-            <div className="p-3.5 bg-[var(--cyan)]/[0.03] border border-[var(--cyan)]/20 rounded-2xl flex items-center justify-between text-xs text-[var(--cyan)]">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                🤖 AI Suggested Router Department:
-              </span>
-              <span className="font-bold px-2.5 py-0.5 rounded-lg bg-[var(--cyan)]/15 uppercase text-[9px] border border-[var(--cyan)]/25">
-                {suggestedDeptPreview}
-              </span>
-            </div>
-          )}
-
           {/* DUPLICATE WARNING BAR */}
           {similarIssue && (
             <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-2xl flex items-center justify-between text-xs text-amber-300">
@@ -960,6 +868,9 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
             </p>
 
             <div className="p-4 bg-slate-500/5 dark:bg-[rgba(255,255,255,0.02)] rounded-2xl border border-slate-200 dark:border-gray-700/20 text-xs">
+              {similarIssue.imageUrl && (
+                <img src={similarIssue.imageUrl} alt={similarIssue.title} className="w-full h-auto rounded-lg mb-4" />
+              )}
               <div className="font-extrabold text-sm flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
                 {similarIssue.title}
@@ -975,11 +886,7 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
             <div className="grid grid-cols-2 gap-3 mt-2">
               <button
                 type="button"
-                onClick={() => {
-                  // Upvote & redirect
-                  confetti({ particleCount: 30 });
-                  setActiveTab("dashboard");
-                }}
+                onClick={handleUpvoteDuplicate}
                 className="py-3 bg-transparent border border-slate-250 dark:border-gray-700 hover:border-slate-400 dark:hover:border-gray-500 rounded-xl text-xs font-bold text-center text-[var(--text-2)] hover:text-[var(--text-1)]"
               >
                 Upvote Existing Ticket
@@ -987,9 +894,9 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
               <button
                 type="button"
                 onClick={() => {
-                  // Bypass
                   setShowDuplicateModal(false);
-                  setSimilarIssue(null); // Clear
+                  setSimilarIssue(null);
+                  proceedWithSubmission();
                 }}
                 className="py-3 bg-[var(--cyan)] text-slate-950 hover:bg-[var(--cyan)]/90 rounded-xl text-xs font-bold text-center"
               >

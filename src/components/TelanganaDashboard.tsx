@@ -566,7 +566,7 @@ export default function TelanganaDashboard() {
             </h3>
           </div>
           
-          <div className="h-64 w-full cursor-default select-none">
+          <div className="h-[300px] w-full cursor-default select-none">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topPendingChartData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} tickLine={false} />
@@ -605,7 +605,7 @@ export default function TelanganaDashboard() {
             </h3>
           </div>
 
-          <div className="h-64 w-full cursor-default select-none">
+          <div className="h-[300px] w-full cursor-default select-none">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topReceivedChartData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} tickLine={false} />

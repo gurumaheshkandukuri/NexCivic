@@ -8,7 +8,7 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "email": { "type": "string" },
-        "role": { "type": "string", "enum": ["Citizen", "Authority"] },
+        "role": { "type": "string", "enum": ["Citizen", "Authority", "MunicipalityManager"] },
         "avatar": { "type": "string" },
         "phone": { "type": "string" },
         "address": { "type": "string" },
