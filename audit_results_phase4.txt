@@ -1,0 +1,43 @@
+[INFO] Auditing 'users' collection...
+[INFO] Scanned 10 users.
+[INFO] 
+Auditing 'issues' collection...
+[ERROR] Issue EIMyoSwCDvJv2E3Xv2yy missing complaintId.
+[ERROR] Issue EIMyoSwCDvJv2E3Xv2yy has invalid coordinates: lat=undefined, lng=undefined
+[ERROR] Issue EIMyoSwCDvJv2E3Xv2yy missing or invalid timeline array.
+[ERROR] Issue V4KGwHljlwg0jrX4JSAN missing complaintId.
+[ERROR] Issue V4KGwHljlwg0jrX4JSAN has invalid coordinates: lat=undefined, lng=undefined
+[ERROR] Issue V4KGwHljlwg0jrX4JSAN missing or invalid timeline array.
+[ERROR] Issue WWnGBgTU3NbV37OgM6nu missing complaintId.
+[ERROR] Issue WWnGBgTU3NbV37OgM6nu has invalid coordinates: lat=undefined, lng=undefined
+[ERROR] Issue WWnGBgTU3NbV37OgM6nu missing or invalid timeline array.
+[ERROR] Issue Y3IK20a3Mk9K9LDwhnbk missing complaintId.
+[ERROR] Issue Y3IK20a3Mk9K9LDwhnbk has invalid coordinates: lat=undefined, lng=undefined
+[ERROR] Issue Y3IK20a3Mk9K9LDwhnbk missing or invalid timeline array.
+[ERROR] Issue aWsvBX3UKPamnGaK8BOu missing complaintId.
+[ERROR] Issue aWsvBX3UKPamnGaK8BOu has invalid coordinates: lat=undefined, lng=undefined
+[ERROR] Issue aWsvBX3UKPamnGaK8BOu missing or invalid timeline array.
+[ERROR] Issue bRXcX5WDBzP6jEc9Op3e missing complaintId.
+[ERROR] Issue bRXcX5WDBzP6jEc9Op3e has invalid coordinates: lat=undefined, lng=undefined
+[ERROR] Issue bRXcX5WDBzP6jEc9Op3e missing or invalid timeline array.
+[ERROR] Issue tFST9wR2bmEgpjGVlUUA missing complaintId.
+[ERROR] Issue tFST9wR2bmEgpjGVlUUA has invalid coordinates: lat=undefined, lng=undefined
+[ERROR] Issue tFST9wR2bmEgpjGVlUUA missing or invalid timeline array.
+[ERROR] Issue yBlCND5rJujvGr8jaBf0 missing complaintId.
+[ERROR] Issue yBlCND5rJujvGr8jaBf0 has invalid coordinates: lat=undefined, lng=undefined
+[ERROR] Issue yBlCND5rJujvGr8jaBf0 missing or invalid timeline array.
+[ERROR] Issue yW2IKayp5EUxcf1OOWzX missing complaintId.
+[ERROR] Issue yW2IKayp5EUxcf1OOWzX has invalid coordinates: lat=undefined, lng=undefined
+[ERROR] Issue yW2IKayp5EUxcf1OOWzX missing or invalid timeline array.
+[INFO] Scanned 11 issues.
+[INFO] 
+Auditing 'notifications' collection...
+[INFO] Scanned 1 notifications.
+[INFO] 
+Auditing 'counters' collection...
+[INFO] Scanned 1 counters.
+[INFO] 
+Auditing 'zones' collection...
+[INFO] Scanned 0 zones.
+[INFO] 
+Audit complete. Found 27 inconsistencies.

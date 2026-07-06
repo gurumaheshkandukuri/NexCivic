@@ -151,21 +151,27 @@ export default function InteractiveMap({
 
       issues.forEach((issue) => {
         if (issue.isDuplicate && issue.duplicateOf) return;
-        const cellId = `${issue.lat.toFixed(2)}_${issue.lng.toFixed(2)}`;
+        const lat = Number(issue.latitude);
+        const lng = Number(issue.longitude);
+        if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+          console.warn(`Skipping issue ${issue.complaintId} for heatmap: Invalid coordinates (${issue.latitude}, ${issue.longitude})`);
+          return;
+        }
+        const cellId = `${lat.toFixed(2)}_${lng.toFixed(2)}`;
         const priorityScore = issue.priority === "Critical" ? 15 : issue.priority === "High" ? 10 : issue.priority === "Medium" ? 5 : 2;
 
         if (!clusters[cellId]) {
           clusters[cellId] = {
-            lat: issue.lat,
-            lng: issue.lng,
+            lat: lat,
+            lng: lng,
             count: 1,
-            votes: issue.confirmCount || 0,
+            votes: issue.communitySupportCount || 0,
             priorityWeight: priorityScore,
             categoryScores: { [issue.category]: 1 }
           };
         } else {
           clusters[cellId].count += 1;
-          clusters[cellId].votes += (issue.confirmCount || 0);
+          clusters[cellId].votes += (issue.communitySupportCount || 0);
           clusters[cellId].priorityWeight += priorityScore;
           clusters[cellId].categoryScores[issue.category] = (clusters[cellId].categoryScores[issue.category] || 0) + 1;
         }
@@ -256,11 +262,22 @@ export default function InteractiveMap({
     }
 
     // Now draw standard markers
+    const bounds: [number, number][] = [];
+
     issues.forEach((issue) => {
-      if (issue.isDuplicate && issue.duplicateOf) return; // Hide duplicates from map unless reviewing
+      // Show all reports immediately, removing the duplicate filter.
+      
+      const lat = Number(issue.latitude);
+      const lng = Number(issue.longitude);
+      if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+        console.warn(`Skipping issue ${issue.complaintId} for marker: Invalid coordinates (${issue.latitude}, ${issue.longitude})`);
+        return;
+      }
 
       const color = issue.status === "Resolved" ? "#00ffa3" : (priorityColors[issue.priority] || "#2563ff");
       const radius = issue.priority === "Critical" ? 14 : issue.priority === "High" ? 11 : 8;
+      
+      bounds.push([lat, lng]);
 
       // Custom SVG icon marker design (make it slightly translucent if heatmap is active or keep high-contrast)
       const opacityStyle = showHeatmap ? "opacity: 0.95; transform: scale(0.9);" : "opacity: 1;";
@@ -278,10 +295,10 @@ export default function InteractiveMap({
             justify-content: center;
           ">
             <span style="font-size: 8px; color: #000; font-weight: bold;">
-              ${issue.confirmCount > 0 ? issue.confirmCount : ""}
+              ${issue.communitySupportCount > 0 ? issue.communitySupportCount : ""}
             </span>
           </div>
-          ${issue.confirmCount >= 7 ? `
+          ${issue.communitySupportCount >= 7 ? `
             <div style="
               position: absolute;
               width: ${radius * 4}px;
@@ -301,27 +318,62 @@ export default function InteractiveMap({
         iconAnchor: [radius, radius]
       });
 
-      const marker = L.marker([issue.lat, issue.lng], { icon: customIcon }).addTo(mapRef.current);
-      markersRef.current[issue.id] = marker;
+      const marker = L.marker([lat, lng], { icon: customIcon }).addTo(mapRef.current);
+      markersRef.current[issue.complaintId] = marker;
 
       // Popup Content template matching request Layout
       const popupHtml = `
-        <div class="p-2 select-none" style="min-width: 180px;">
-          <div class="flex items-center gap-1 font-display font-bold text-xs uppercase mb-1 text-[var(--cyan)]">
-            <span>${issue.category}</span>
-            <span style="font-size: 9px;" class="px-1.5 py-0.5 rounded ml-auto text-white" style="background: ${color};">
-              ${issue.priority}
-            </span>
-          </div>
-          <div class="font-bold text-sm mb-1">${issue.title}</div>
-          <div class="text-[11px] text-[var(--text-2)] line-clamp-2 mb-2">${issue.description}</div>
-          <div class="text-[10px] text-gray-500 mb-2 flex items-center gap-1">
-            <span>📍 ${issue.zone}</span>
-            <span class="ml-auto">📅 ${new Date(issue.createdAt?.seconds ? issue.createdAt.seconds * 1000 : issue.createdAt).toLocaleDateString()}</span>
-          </div>
-          <div class="flex items-center justify-between border-t border-gray-700/20 pt-2">
-            <span class="text-xs text-[var(--text-1)] font-medium">👥 ${issue.confirmCount} confirmed</span>
-            <span class="text-[10px] text-[var(--cyan)] hover:underline cursor-pointer font-bold inline-block" id="view-det-${issue.id}">
+          <div class="p-2 select-none" style="min-width: 180px;">
+            <div class="flex items-center gap-1 font-display font-bold text-xs uppercase mb-1 text-[var(--cyan)]">
+              <span>${issue.category}</span>
+              <span style="font-size: 9px;" class="px-1.5 py-0.5 rounded ml-auto text-white" style="background: ${color};">
+                ${issue.priority}
+              </span>
+            </div>
+            <div class="font-bold text-sm mb-0.5">${issue.title}</div>
+            <div class="text-[10px] text-gray-500 font-mono mb-1">ID: #${issue.complaintId?.split("_").pop() || "N/A"} | STATUS: ${issue.status}</div>
+            <div class="text-[11px] text-[var(--text-2)] line-clamp-2 mb-2">${issue.description}</div>
+            <div class="text-[10px] text-gray-500 mb-3 flex flex-col gap-1 border-y border-gray-700/20 py-2">
+              <div>
+                <span class="block mb-0.5 text-[8px] uppercase tracking-wider">LANDMARK</span>
+                <strong class="text-[var(--text-1)] block font-sans">${issue.landmark || 'Not provided'}</strong>
+              </div>
+              <div>
+                <span class="block mb-0.5 text-[8px] uppercase tracking-wider">AREA</span>
+                <strong class="text-[var(--text-1)] block font-sans">${issue.area || 'Not provided'}</strong>
+              </div>
+              <div>
+                <span class="block mb-0.5 text-[8px] uppercase tracking-wider">ULB</span>
+                <strong class="text-[var(--text-1)] block font-sans">${issue.ulb || 'Not provided'}</strong>
+              </div>
+              <div>
+                <span class="block mb-0.5 text-[8px] uppercase tracking-wider">DISTRICT</span>
+                <strong class="text-[var(--text-1)] block font-sans">${issue.district || 'Not provided'}</strong>
+              </div>
+              <div>
+                <span class="block mb-0.5 text-[8px] uppercase tracking-wider">STATE</span>
+                <strong class="text-[var(--text-1)] block font-sans">${issue.state || 'Not provided'}</strong>
+              </div>
+              <div>
+                <span class="block mb-0.5 text-[8px] uppercase tracking-wider">STATUS</span>
+                <strong class="text-[var(--text-1)] block font-sans capitalize">${issue.status || 'Not provided'}</strong>
+              </div>
+              <div>
+                <span class="block mb-0.5 text-[8px] uppercase tracking-wider">COMMUNITY SUPPORT</span>
+                <strong class="text-[var(--text-1)] block font-sans">${issue.communitySupportCount ?? '0'} Confirmation${issue.communitySupportCount !== 1 ? 's' : ''}</strong>
+              </div>
+              <div class="mt-1">
+                <span class="block mb-0.5 text-[8px] uppercase tracking-wider">COORDINATES</span>
+                <strong class="text-gray-600 block text-[9px] font-mono">${lat.toFixed(4)}, ${lng.toFixed(4)}</strong>
+              </div>
+            </div>
+            <div class="flex items-center justify-between mt-1">
+              <div class="flex flex-col gap-0.5">
+                <span class="text-[9px] text-gray-500">👤 ${issue.reportedByName || "Anonymous"}</span>
+                <span class="text-[9px] text-gray-500">📅 ${new Date(issue.createdAt?.seconds ? issue.createdAt.seconds * 1000 : issue.createdAt).toLocaleDateString()}</span>
+              </div>
+            <div class="flex items-center justify-end border-t border-gray-700/20 pt-2 mt-2">
+              <span class="text-[10px] text-[var(--cyan)] hover:underline cursor-pointer font-bold inline-block" id="view-det-${issue.complaintId}">
               Details →
             </span>
           </div>
@@ -331,7 +383,7 @@ export default function InteractiveMap({
       marker.bindPopup(popupHtml);
 
       marker.on("popupopen", () => {
-        const btn = document.getElementById(`view-det-${issue.id}`);
+        const btn = document.getElementById(`view-det-${issue.complaintId}`);
         if (btn && onSelectIssue) {
           btn.addEventListener("click", () => {
             onSelectIssue(issue);
@@ -339,6 +391,10 @@ export default function InteractiveMap({
         }
       });
     });
+    
+    if (bounds.length > 0 && !latLngPicker) {
+      mapRef.current.fitBounds(L.latLngBounds(bounds), { padding: [50, 50], maxZoom: 16 });
+    }
   }, [issues, showHeatmap]);
 
   // Center FlyTo selected issue

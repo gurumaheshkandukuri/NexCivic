@@ -1,0 +1,39 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to fetch the Firestore issue document
+    function getIssueData(complaintId) {
+      return firestore.get(/databases/(default)/documents/issues/$(complaintId)).data;
+    }
+    
+    // Validate if the authenticated user is the assigned inspector
+    function isAssignedInspector(complaintId) {
+      return request.auth != null && 
+             request.auth.uid == getIssueData(complaintId).assignedInspectorUID;
+    }
+    
+    // Validate if the issue is currently in INSPECTION_STARTED status
+    function isInspectionStarted(complaintId) {
+      return getIssueData(complaintId).status == 'Inspection Started';
+    }
+
+    // Match all evidence files
+    match /issues/{complaintId}/{stage}/{filename} {
+      
+      // Allow reading evidence for anyone authenticated (or public if needed)
+      allow read: if request.auth != null;
+      
+      // Allow uploading evidence ONLY if the uploader is the assigned inspector,
+      // the issue is in the correct status, and it is a before or after image.
+      allow write: if (stage == 'before' || stage == 'after') &&
+                      isAssignedInspector(complaintId) &&
+                      isInspectionStarted(complaintId) &&
+                      request.resource.size < 5 * 1024 * 1024 && // 5MB limit
+                      request.resource.contentType.matches('image/(png|jpeg|webp)'); // Exact Image Types
+                      
+      // Deletes of evidence are restricted once uploaded
+      allow delete: if false;
+    }
+  }
+}

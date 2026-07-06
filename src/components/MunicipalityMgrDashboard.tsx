@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Building, 
   Sparkles, 
@@ -24,17 +24,26 @@ import {
   Send,
   Check,
   Map,
-  ShieldAlert
+  ShieldAlert,
+  Star
 } from "lucide-react";
 import { Issue, UserProfile, ImportBatch } from "../types";
+import { states, locationData } from "../constants/locations";
+import { STATUS } from "../constants/status";
+import { PRIORITIES } from "../constants/priorities";
+import { CATEGORIES, CATEGORY_LIST } from "../constants/categories";
 import { 
   updateIssueStatus, 
   mergeIssues, 
-  getImportBatches, 
-  createImportBatch, 
-  deleteImportBatchCascade,
   createIssue
-} from "../dbService";
+} from "../services/issueService";
+import {
+  getImportBatches,
+  createImportBatch,
+  deleteImportBatchCascade
+} from "../services/adminService";
+import { generateResolutionCertificate } from "../utils/pdfGenerator";
+import { generateHQAnalytics } from "../utils/analytics/hqAnalytics";
 import { 
   ResponsiveContainer, 
   BarChart, 
@@ -49,18 +58,20 @@ import {
   Area,
   Legend
 } from "recharts";
+import { useLiveIssues } from "../hooks/useLiveIssues";
+import { useLiveAnalytics } from "../hooks/useLiveAnalytics";
 
 interface MunicipalityMgrDashboardProps {
   user: UserProfile;
-  issues: Issue[];
-  onRefresh: () => void;
 }
 
-export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: MunicipalityMgrDashboardProps) {
+export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashboardProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "backlog" | "imports" | "duplicates">("overview");
 
   // Filters state
-  const [selectedZone, setSelectedZone] = useState<string>("all");
+  const [filterState, setFilterState] = useState<string>(user.assignedState || "all");
+  const [filterDistrict, setFilterDistrict] = useState<string>("all");
+  const [filterUlb, setFilterUlb] = useState<string>("all");
   const [dateRange, setDateRange] = useState({
     start: "2026-05-01",
     end: new Date().toISOString().split("T")[0]
@@ -96,86 +107,40 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
     setImportBatchesList(list);
   };
 
+  const { issues, isSyncing, isOffline, lastSynced } = useLiveIssues({
+    scope: "hq",
+    state: user.assignedState || ""
+  });
+
   // Filter Issues
-  const filteredIssues = issues.filter((issue) => {
-    // Zone filter
-    if (selectedZone !== "all") {
-      if (issue.zone && issue.zone.toLowerCase() !== selectedZone.toLowerCase()) {
+  const filteredIssues = useMemo(() => {
+    return issues.filter((issue) => {
+      // State > District > ULB filter
+      if (filterState !== "all" && issue.state !== filterState) return false;
+      if (filterDistrict !== "all" && issue.district !== filterDistrict) return false;
+      if (filterUlb !== "all" && issue.ulb !== filterUlb) return false;
+      // Date filter
+      let issueTime = 0;
+      if (issue.createdAt) {
+        if (typeof issue.createdAt === "string") issueTime = new Date(issue.createdAt).getTime();
+        else if ((issue.createdAt as any).toDate) issueTime = (issue.createdAt as any).toDate().getTime();
+        else if ((issue.createdAt as any).seconds) issueTime = (issue.createdAt as any).seconds * 1000;
+        else issueTime = new Date(issue.createdAt as any).getTime();
+      }
+      const startTime = new Date(dateRange.start).getTime();
+      const endTime = new Date(dateRange.end + "T23:59:59").getTime();
+      if (issueTime < startTime || issueTime > endTime) {
         return false;
       }
-    }
-    // Date filter
-    const issueTime = new Date(issue.createdAt).getTime();
-    const startTime = new Date(dateRange.start).getTime();
-    const endTime = new Date(dateRange.end + "T23:59:59").getTime();
-    if (issueTime < startTime || issueTime > endTime) {
-      return false;
-    }
-    return true;
-  });
+      return true;
+    });
+  }, [issues, filterState, filterDistrict, filterUlb, dateRange]);
 
   // Metric calculation helpers
-  const openCount = filteredIssues.filter(i => i.status === "Open").length;
-  const inProgressCount = filteredIssues.filter(i => i.status === "In Progress").length;
-  const resolvedCount = filteredIssues.filter(i => i.status === "Resolved").length;
-  const totalCount = filteredIssues.length;
-
-  // Average Resolution Time helper in hours/days
-  const calculateAvgResolutionTime = (issuesList: Issue[]) => {
-    const resolved = issuesList.filter(i => i.status === "Resolved");
-    if (resolved.length === 0) return "2.4 Days"; // Realistic default if none are resolved in active context
-    let totalMs = 0;
-    let count = 0;
-    resolved.forEach(i => {
-      const created = new Date(i.createdAt).getTime();
-      const resolvedTime = i.resolvedAt ? new Date(i.resolvedAt).getTime() : Date.now();
-      if (resolvedTime > created) {
-        totalMs += (resolvedTime - created);
-        count++;
-      }
-    });
-    if (count === 0) return "2.4 Days";
-    const avgHours = totalMs / (1000 * 60 * 60);
-    if (avgHours < 24) {
-      return `${avgHours.toFixed(1)} Hrs`;
-    }
-    return `${(avgHours / 24).toFixed(1)} Days`;
-  };
-
-  const avgResolutionTime = calculateAvgResolutionTime(filteredIssues);
-
-  // Charts prep
-  const priorityData = [
-    { name: "Critical", value: filteredIssues.filter(i => i.priority === "Critical").length, color: "var(--red)" },
-    { name: "High", value: filteredIssues.filter(i => i.priority === "High").length, color: "var(--orange)" },
-    { name: "Medium", value: filteredIssues.filter(i => i.priority === "Medium").length, color: "var(--yellow)" },
-    { name: "Low", value: filteredIssues.filter(i => i.priority === "Low").length, color: "var(--green)" }
-  ].filter(p => p.value > 0);
-
-  const categoriesList = ["Pothole", "Garbage Overflow", "Water Leakage", "Street Light", "Drainage", "Infrastructure", "Other"];
-  const categoryData = categoriesList.map((cat) => {
-    const subset = filteredIssues.filter(i => i.category === cat);
-    return {
-      category: cat === "Garbage Overflow" ? "Garbage" : cat === "Water Leakage" ? "Water" : cat === "Street Light" ? "Lights" : cat,
-      count: subset.length,
-      resolved: subset.filter(i => i.status === "Resolved").length
-    };
-  });
-
-  // Issue reporting timelines (aggregated by date)
-  const getTimelineData = () => {
-    const datesMap: { [key: string]: number } = {};
-    filteredIssues.forEach((issue) => {
-      const dStr = new Date(issue.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      datesMap[dStr] = (datesMap[dStr] || 0) + 1;
-    });
-    return Object.keys(datesMap).map(key => ({
-      date: key,
-      incidents: datesMap[key]
-    })).slice(-10); // show last 10 days
-  };
-
-  const timelineData = getTimelineData();
+  const analytics = useLiveAnalytics(user, filteredIssues);
+  
+  if (!analytics) return null;
+  const { summary, charts, metadata } = analytics;
 
   // CSV Drag/Drop Parse Handlers
   const handleCSVDragOver = (e: React.DragOverEvent) => {
@@ -254,7 +219,7 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
         let category = "Other";
         if (cIdx !== -1 && row[cIdx]) {
           const rawCat = row[cIdx].trim();
-          const matchedCat = categoriesList.find(
+          const matchedCat = CATEGORY_LIST.find(
             c => c.toLowerCase() === rawCat.toLowerCase() || rawCat.toLowerCase().includes(c.toLowerCase())
           );
           if (matchedCat) category = matchedCat;
@@ -277,14 +242,14 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
           description,
           category,
           priority,
-          address,
-          lat,
-          lng,
-          zone: "Zone A",
-          status: "Open",
-          reportedBy: user.id,
-          reporterName: user.name,
-          reporterEmail: user.email,
+          landmark: address,
+          latitude: lat,
+          longitude: lng,
+          state: "Maharashtra", district: "Mumbai", ulb: "BMC",
+          status: "Submitted",
+          reportedByUID: user.uid,
+          reportedByName: user.name,
+           
           source: "csv_import",
           importBatch: batchId,
         });
@@ -295,7 +260,7 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
       setParsedRows([]);
       setParsedHeaders([]);
       loadBatches();
-      onRefresh();
+      
       
       setTimeout(() => {
         setImportStatus("");
@@ -313,7 +278,7 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
       const res = await fetch("/api/gemini/scan-duplicates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issues: issues.map(i => ({ id: i.id, title: i.title, description: i.description, lat: i.lat, lng: i.lng })) })
+        body: JSON.stringify({ issues: issues.map(i => ({ id: i.complaintId, title: i.title, description: i.description, lat: i.latitude, lng: i.longitude })) })
       });
       const data = await res.json();
       setDuplicateScanResults(data.duplicates || []);
@@ -328,15 +293,14 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
     e.preventDefault();
     if (!selectedIssue) return;
 
-    const issueId = selectedIssue.id;
+    const issueId = selectedIssue.uid!;
 
-    // Call update status including officers & comment updates
     await updateIssueStatus(issueId, statusInput, {
       afterPhotoUrl: afterPhoto || undefined,
       comments: notes || undefined,
       assignedDept: assignedDept || undefined,
       assignedOfficer: assignedOfficer || undefined,
-    });
+    }, user);
 
     setHighlightedId(issueId);
     setTimeout(() => {
@@ -348,29 +312,44 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
     setAfterPhoto("");
     setAssignedDept("");
     setAssignedOfficer("");
-    onRefresh();
+    
   };
 
   const handleDeleteBatch = async (batchId: string, type: "issues" | "survey") => {
     if (confirm("Proceeding will delete all associated dataset rows imported in this batch. Delete anyway?")) {
       await deleteImportBatchCascade(batchId, type);
       loadBatches();
-      onRefresh();
+      
     }
   };
 
   const handleMergeAction = async (primaryId: string, duplicateId: string) => {
-    await mergeIssues(primaryId, [duplicateId], user.id);
-    onRefresh();
+    await mergeIssues(primaryId, [duplicateId], user.uid);
+    
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex flex-col gap-8 text-left">
       
       {/* Upper header segment */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-800 pb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4 border-b border-gray-800 pb-6">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 font-bold text-[10px] uppercase font-mono">
+          <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
+            Municipality HQ Analytics
+            {isSyncing && (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[10px] text-cyan-400 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                SYNCING
+              </span>
+            )}
+            {isOffline && (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-mono">
+                <AlertTriangle className="w-3 h-3" />
+                OFFLINE
+              </span>
+            )}
+          </h1>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 font-bold text-[10px] uppercase font-mono mt-2">
             <Building className="w-3.5 h-3.5" />
             <span>MUNICIPAL HQ STRATEGIC CONSOLE</span>
           </div>
@@ -389,14 +368,42 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
             <span>Scope Filters</span>
           </div>
           
+          {user.assignedState ? (
+            <div className="bg-[var(--cyan)]/10 border border-[var(--cyan)]/30 text-[11px] font-bold text-[var(--cyan)] py-1.5 px-3 rounded-lg flex items-center gap-1.5">
+              <MapPin className="w-3 h-3" />
+              {user.assignedState}
+            </div>
+          ) : (
+            <select 
+              value={filterState} 
+              onChange={(e) => { setFilterState(e.target.value); setFilterDistrict("all"); setFilterUlb("all"); }}
+              className="bg-slate-950 border border-gray-800 text-[11px] font-bold text-white py-1.5 px-2 rounded-lg focus:outline-none focus:border-[var(--cyan)] transition-colors cursor-pointer"
+            >
+              <option value="all">🌐 All States</option>
+              {states.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
           <select 
-            value={selectedZone} 
-            onChange={(e) => setSelectedZone(e.target.value)}
-            className="bg-slate-950 border border-gray-800 text-[11px] font-bold text-white py-1.5 px-3 rounded-lg focus:outline-none focus:border-[var(--cyan)] transition-colors cursor-pointer"
+            value={filterDistrict} 
+            onChange={(e) => { setFilterDistrict(e.target.value); setFilterUlb("all"); }}
+            disabled={filterState === "all"}
+            className="bg-slate-950 border border-gray-800 text-[11px] font-bold text-white py-1.5 px-2 rounded-lg focus:outline-none focus:border-[var(--cyan)] transition-colors cursor-pointer disabled:opacity-50"
           >
-            <option value="all">🌐 All Municipal Zones</option>
-            <option value="zone a">📍 Zone A (West Division)</option>
-            <option value="zone b">📍 Zone B (Central Division)</option>
+            <option value="all">📍 All Districts</option>
+            {filterState !== "all" && Object.keys(locationData[filterState as keyof typeof locationData] || {}).map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <select 
+            value={filterUlb} 
+            onChange={(e) => setFilterUlb(e.target.value)}
+            disabled={filterDistrict === "all"}
+            className="bg-slate-950 border border-gray-800 text-[11px] font-bold text-white py-1.5 px-2 rounded-lg focus:outline-none focus:border-[var(--cyan)] transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <option value="all">🏢 All ULBs</option>
+            {filterDistrict !== "all" && (locationData[filterState as keyof typeof locationData] as any)?.[filterDistrict]?.map((u: string) => (
+              <option key={u} value={u}>{u}</option>
+            ))}
           </select>
 
           <div className="flex items-center gap-2 border-l border-gray-800 pl-3.5">
@@ -441,52 +448,58 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
       {/* Overview/Performance Tab */}
       {activeTab === "overview" && (
         <div className="flex flex-col gap-6 animate-fadeIn">
-          
+          <div className="flex justify-end mb-2 -mt-4">
+            <span className="text-[10px] text-gray-400 font-mono">Last Updated: Just now</span>
+          </div>
           {/* Key Metric cards in Claymorphism */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="p-5 rounded-2xl bg-white/5 border border-white/5 text-left flex items-center justify-between glass">
-              <div>
-                <span className="text-[10px] uppercase text-gray-400 font-bold block">Aggregated Tickets</span>
-                <span className="text-3xl font-display font-black text-white block mt-1">{totalCount}</span>
-              </div>
-              <span className="p-2 ml-2 rounded-xl bg-gray-500/10 text-gray-400"><Layers className="w-5 h-5" /></span>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-left flex flex-col justify-between glass">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">Aggregated</span>
+              <span className="text-xl font-display font-black text-white block mt-1">{summary.totalIncidents}</span>
             </div>
             
-            <div className="p-5 rounded-2xl bg-white/5 border border-white/5 text-left flex items-center justify-between glass">
-              <div>
-                <span className="text-[10px] uppercase text-rose-500 font-bold block">Open Backlog</span>
-                <span className="text-3xl font-display font-black text-rose-400 block mt-1">{openCount}</span>
-              </div>
-              <span className="p-2 ml-2 rounded-xl bg-rose-500/10 text-rose-400"><Clock className="w-5 h-5" /></span>
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-left flex flex-col justify-between glass">
+              <span className="text-[10px] uppercase text-rose-500 font-bold block">Open Backlog</span>
+              <span className="text-xl font-display font-black text-rose-400 block mt-1">{summary.openBacklog}</span>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white/5 border border-white/5 text-left flex items-center justify-between glass">
-              <div>
-                <span className="text-[10px] uppercase text-blue-500 font-bold block">Active In Field</span>
-                <span className="text-3xl font-display font-black text-blue-400 block mt-1">{inProgressCount}</span>
-              </div>
-              <span className="p-2 ml-2 rounded-xl bg-blue-500/10 text-blue-400"><Wrench className="w-5 h-5" /></span>
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-left flex flex-col justify-between glass">
+              <span className="text-[10px] uppercase text-blue-500 font-bold block">Active In Field</span>
+              <span className="text-xl font-display font-black text-blue-400 block mt-1">{summary.activeInField}</span>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white/5 border border-white/5 text-left flex items-center justify-between glass">
-              <div>
-                <span className="text-[10px] uppercase text-emerald-500 font-bold block">Certified Closed</span>
-                <span className="text-3xl font-display font-black text-emerald-400 block mt-1">{resolvedCount}</span>
-              </div>
-              <span className="p-2 ml-2 rounded-xl bg-emerald-500/10 text-[var(--green)]"><CheckCircle2 className="w-5 h-5" /></span>
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-left flex flex-col justify-between glass">
+              <span className="text-[10px] uppercase text-emerald-500 font-bold block">Certified Closed</span>
+              <span className="text-xl font-display font-black text-emerald-400 block mt-1">{summary.certifiedClosed}</span>
             </div>
 
-            <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/15 text-left flex items-center justify-between shadow-[inset_0_3px_10px_rgba(245,158,11,0.05)]">
-              <div>
-                <span className="text-[10px] uppercase text-amber-500 font-bold block">Avg. Resolution Speed</span>
-                <span className="text-2xl font-display font-black text-amber-400 block mt-1">{avgResolutionTime}</span>
+            <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/15 text-left flex flex-col justify-between shadow-[inset_0_3px_10px_rgba(245,158,11,0.05)]">
+              <span className="text-[10px] uppercase text-amber-500 font-bold block flex justify-between">
+                Avg Resolution <span className={summary.workloadTrend.includes("↑") ? "text-rose-400" : summary.workloadTrend.includes("↓") ? "text-emerald-400" : "text-amber-500"}>{summary.workloadTrend}</span>
+              </span>
+              <span className="text-xl font-display font-black text-amber-400 block mt-1">{summary.averageResolutionTimeDays === "Insufficient Data" ? <span className="text-xs text-amber-500/50 font-normal">Insufficient Data</span> : `${summary.averageResolutionTimeDays}d`}</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-left flex flex-col justify-between glass">
+              <span className="text-[10px] uppercase text-[var(--cyan)] font-bold block">Top Category</span>
+              <span className="text-sm font-display font-black text-[var(--cyan)] block mt-1 truncate">{summary.topCategory === "Insufficient Data" ? <span className="text-xs text-gray-500 font-normal">Insufficient Data</span> : summary.topCategory}</span>
+            </div>
+            
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-left flex flex-col justify-between glass">
+              <span className="text-[10px] uppercase text-indigo-400 font-bold block">Top District</span>
+              <span className="text-sm font-display font-black text-indigo-400 block mt-1 truncate">{summary.topDistrict === "Insufficient Data" ? <span className="text-xs text-gray-500 font-normal">Insufficient Data</span> : summary.topDistrict}</span>
+            </div>
+            
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-left flex flex-col justify-between glass">
+              <span className="text-[10px] uppercase text-yellow-400 font-bold block">Satisfaction</span>
+              <div className="flex items-center gap-1 mt-1">
+                <span className="text-xl font-display font-black text-yellow-400">{summary.citizenSatisfaction === "Insufficient Data" ? <span className="text-xs text-gray-500 font-normal">Insufficient Data</span> : summary.citizenSatisfaction}</span>
+                {summary.citizenSatisfaction !== "Insufficient Data" ? <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" /> : null}
               </div>
-              <span className="p-2 ml-2 rounded-xl bg-amber-500/10 text-amber-400"><Activity className="w-5 h-5" /></span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
             {/* Category breakdown bar */}
             <div className="lg:col-span-8 glass p-5 rounded-3xl border border-white/5 h-80 shadow-xl relative">
               <div className="flex items-center justify-between mb-4">
@@ -496,16 +509,22 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                 <span className="text-[9px] font-mono tracking-widest text-[#5ca2eb] font-bold bg-[#5ca2eb]/10 px-2 py-0.5 rounded-md uppercase">Wards Cross-Audit</span>
               </div>
               
-              <ResponsiveContainer width="100%" height="80%">
-                <BarChart data={categoryData}>
-                  <XAxis dataKey="category" stroke="#94a3b8" fontSize={9} tickLine={false} />
-                  <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} />
-                  <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px", fontSize: "11px" }} />
-                  <Legend wrapperStyle={{ fontSize: "10px", marginTop: "10px" }} />
-                  <Bar name="Total Incidents" dataKey="count" fill="var(--cyan)" radius={[4, 4, 0, 0]} />
-                  <Bar name="Resolved Issues" dataKey="resolved" fill="#10b981" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {charts.categoryDistribution.length === 0 ? (
+                <div className="h-[75%] flex items-center justify-center text-gray-500 text-sm">
+                  No analytics available yet.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={charts.categoryDistribution}>
+                    <XAxis dataKey="category" stroke="#94a3b8" fontSize={9} tickLine={false} />
+                    <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} />
+                    <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px", fontSize: "11px" }} />
+                    <Legend wrapperStyle={{ fontSize: "10px", marginTop: "10px" }} />
+                    <Bar name="Total Incidents" dataKey="total" fill="var(--cyan)" radius={[4, 4, 0, 0]} />
+                    <Bar name="Resolved Issues" dataKey="resolved" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             {/* Severity Priority Donuts */}
@@ -515,81 +534,115 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                   Priority Risk Distribution
                 </span>
                 
-                {priorityData.length === 0 ? (
-                  <div className="h-44 flex flex-col items-center justify-center text-gray-500 text-xs">
-                    No priority statistics in selection.
+                {charts.priorityDistribution.length === 0 ? (
+                  <div className="h-44 flex flex-col items-center justify-center text-gray-500 text-sm">
+                    No analytics available yet.
                   </div>
                 ) : (
                   <div className="h-44 flex items-center justify-center relative">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height={170}>
                       <PieChart>
                         <Pie
-                          data={priorityData}
+                          data={charts.priorityDistribution}
                           innerRadius={50}
                           outerRadius={70}
                           paddingAngle={3}
-                          dataKey="value"
+                          dataKey="count"
+                          nameKey="priority"
                         >
-                          {priorityData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
+                          {charts.priorityDistribution.map((entry, index) => {
+                             let color = "var(--green)";
+                             if (entry.priority === "Critical") color = "var(--red)";
+                             if (entry.priority === "High") color = "var(--orange)";
+                             if (entry.priority === "Medium") color = "var(--yellow)";
+                             return <Cell key={`cell-${index}`} fill={color} />;
+                          })}
                         </Pie>
                         <Tooltip contentStyle={{ background: "#0f172a", border: "none", borderRadius: "8px", fontSize: "11px" }} />
                       </PieChart>
                     </ResponsiveContainer>
                     <div className="absolute flex flex-col items-center justify-center">
                       <span className="text-[10px] text-gray-400 uppercase font-bold">Severity</span>
-                      <span className="text-xl font-display font-black text-white">{totalCount}</span>
+                      <span className="text-xl font-display font-black text-white">{summary.totalIncidents}</span>
                     </div>
                   </div>
                 )}
               </div>
 
               {/* Legend checklist */}
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {[
-                  { name: "Critical", class: "bg-[var(--red)]" },
-                  { name: "High", class: "bg-[var(--orange)]" },
-                  { name: "Medium", class: "bg-[var(--yellow)]" },
-                  { name: "Low", class: "bg-[var(--green)]" }
-                ].map((pSym) => {
-                  const count = filteredIssues.filter(i => i.priority === pSym.name).length;
-                  return (
-                    <div key={pSym.name} className="flex items-center gap-1.5 text-[10px] text-gray-400 font-semibold px-2 py-1 bg-slate-900/30 rounded-lg border border-white/5">
-                      <span className={`w-2 h-2 rounded-full ${pSym.class}`} />
-                      <span>{pSym.name}: {count}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              {charts.priorityDistribution.length > 0 && (
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {charts.priorityDistribution.map((pSym) => {
+                    let colorClass = "bg-[var(--green)]";
+                    if (pSym.priority === "Critical") colorClass = "bg-[var(--red)]";
+                    if (pSym.priority === "High") colorClass = "bg-[var(--orange)]";
+                    if (pSym.priority === "Medium") colorClass = "bg-[var(--yellow)]";
+                    return (
+                      <div key={pSym.priority} className="flex items-center gap-1.5 text-[10px] text-gray-400 font-semibold px-2 py-1 bg-slate-900/30 rounded-lg border border-white/5">
+                        <span className={`w-2 h-2 rounded-full ${colorClass}`} />
+                        <span>{pSym.priority}: {pSym.count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Timeline trend graph */}
-          <div className="glass p-5 rounded-3xl border border-white/5 h-64 shadow-xl">
-            <span className="font-display font-bold text-xs uppercase text-[var(--text-2)] mb-4 block">
-              Incident Reporting Escalation Timelines
-            </span>
-            {timelineData.length === 0 ? (
-              <div className="h-[75%] flex items-center justify-center text-gray-500 text-xs">
-                No temporal metrics logged within the selected date boundary.
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="75%">
-                <AreaChart data={timelineData}>
-                  <defs>
-                    <linearGradient id="cyberGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--cyan)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="var(--cyan)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} tickLine={false} />
-                  <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} />
-                  <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", fontSize: "11px" }} />
-                  <Area type="monotone" dataKey="incidents" stroke="var(--cyan)" strokeWidth={2.5} fillOpacity={1} fill="url(#cyberGradient)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Timeline trend graph */}
+            <div className="glass p-5 rounded-3xl border border-white/5 h-64 shadow-xl">
+              <span className="font-display font-bold text-xs uppercase text-[var(--text-2)] mb-4 block">
+                Monthly Trend Activity
+              </span>
+              {charts.monthlyTrend.length === 0 ? (
+                <div className="h-[75%] flex items-center justify-center text-gray-500 text-sm">
+                  No analytics available yet.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={190}>
+                  <AreaChart data={charts.monthlyTrend}>
+                    <defs>
+                      <linearGradient id="cyberGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--cyan)" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="var(--cyan)" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="cyberGradient2" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} tickLine={false} />
+                    <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} />
+                    <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", fontSize: "11px" }} />
+                    <Legend wrapperStyle={{ fontSize: "10px", marginTop: "10px" }} />
+                    <Area name="Submitted" type="monotone" dataKey="submitted" stroke="var(--cyan)" strokeWidth={2.5} fillOpacity={1} fill="url(#cyberGradient)" />
+                    <Area name="Resolved" type="monotone" dataKey="resolved" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#cyberGradient2)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Department Workload / District Comparison */}
+            <div className="glass p-5 rounded-3xl border border-white/5 h-64 shadow-xl">
+              <span className="font-display font-bold text-xs uppercase text-[var(--text-2)] mb-4 block">
+                District Comparison Workload
+              </span>
+              {charts.districtComparison.length === 0 ? (
+                <div className="h-[75%] flex items-center justify-center text-gray-500 text-sm">
+                  No analytics available yet.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={190}>
+                  <BarChart data={charts.districtComparison} layout="vertical">
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="district" width={80} stroke="#94a3b8" fontSize={10} tickLine={false} />
+                    <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", fontSize: "11px" }} />
+                    <Bar name="Active Tickets" dataKey="count" fill="var(--orange)" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -612,7 +665,7 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                   <tr className="border-b border-gray-800 bg-slate-950/45 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
                     <th className="p-4">Ticket ID & Title</th>
                     <th className="p-4">Category</th>
-                    <th className="p-4">Zone / Ward</th>
+                    <th className="p-4">Location (ULB)</th>
                     <th className="p-4">Priority</th>
                     <th className="p-4">Registered By</th>
                     <th className="p-4">State Agency</th>
@@ -629,10 +682,10 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                     </tr>
                   ) : (
                     filteredIssues.map((issue) => {
-                      const isHilited = highlightedId === issue.id;
+                      const isHilited = highlightedId === issue.complaintId;
                       return (
                         <tr 
-                          key={issue.id} 
+                          key={issue.complaintId} 
                           className={`transition-colors hover:bg-white/5 cursor-pointer md:table-row ${
                             isHilited ? "bg-[var(--cyan)]/[0.08] animate-pulse" : ""
                           }`}
@@ -640,7 +693,7 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                           <td className="p-4 font-semibold" onClick={() => setSelectedIssue(issue)}>
                             <div className="flex flex-col">
                               <span className="font-bold text-[var(--text-1)] text-xs font-sans hover:text-[var(--cyan)] transition-colors">{issue.title}</span>
-                              <span className="text-[10px] font-mono text-gray-500 mt-0.5 max-w-xs truncate">📍 {issue.address}</span>
+                              <span className="text-[10px] font-mono text-gray-500 mt-0.5 max-w-xs truncate">📍 {issue.landmark}</span>
                             </div>
                           </td>
                           <td className="p-4" onClick={() => setSelectedIssue(issue)}>
@@ -649,39 +702,39 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                             </span>
                           </td>
                           <td className="p-4 font-mono font-bold text-gray-400" onClick={() => setSelectedIssue(issue)}>
-                            {issue.zone || "Zone A"}
+                            {issue.ulb || issue.district || issue.state || "N/A"}
                           </td>
                           <td className="p-4" onClick={() => setSelectedIssue(issue)}>
                             <span className={`px-2 py-0.5 rounded-full text-[9px] uppercase font-black tracking-wider ${
-                              issue.priority === "Critical" ? "bg-[var(--red)]/10 text-[var(--red)] border border-[var(--red)]/20"
-                              : issue.priority === "High" ? "bg-[var(--orange)]/10 text-[var(--orange)] border border-[var(--orange)]/20"
-                              : issue.priority === "Medium" ? "bg-[var(--yellow)]/10 text-[var(--yellow)] border border-[var(--yellow)]/20"
-                              : "bg-[var(--green)]/10 text-[var(--green)] border border-[var(--green)]/20"
+                              issue.priority === PRIORITIES.CRITICAL ? "text-red-400" :
+                              issue.priority === PRIORITIES.HIGH ? "text-orange-400" :
+                              issue.priority === PRIORITIES.MEDIUM ? "text-amber-400" :
+                              "text-emerald-400"
                             }`}>
-                              ● {issue.priority}
+                              {issue.priority}
                             </span>
                           </td>
                           <td className="p-4" onClick={() => setSelectedIssue(issue)}>
                             <div className="flex flex-col">
-                              <span className="font-semibold text-gray-300">{issue.reporterName}</span>
-                              <span className="text-[9px] font-mono text-gray-550">{issue.reporterEmail}</span>
+                              <span className="font-semibold text-gray-300">{issue.reportedByName}</span>
+                              <span className="text-[9px] font-mono text-gray-550">{""}</span>
                             </div>
                           </td>
                           <td className="p-4" onClick={() => setSelectedIssue(issue)}>
                             <div className="flex flex-col">
                               <span className="text-[11px] font-semibold text-[var(--cyan)] uppercase tracking-wide">
-                                🏢 {issue.suggestedDepartment || "Other"}
+                                🏢 {issue.category || "Other"}
                               </span>
                               <span className="text-[9px] text-gray-500 mt-0.5 font-sans">
-                                {issue.assignedToName ? `👷 ${issue.assignedToName}` : "⚠️ Unassigned Officer"}
+                                {issue.assignedInspectorName ? `👷 ${issue.assignedInspectorName}` : "⚠️ Unassigned Officer"}
                               </span>
                             </div>
                           </td>
                           <td className="p-4 text-center" onClick={() => setSelectedIssue(issue)}>
-                            <span className={`px-2 text-[9px] font-extrabold uppercase py-0.5 rounded ${
-                              issue.status === "Open" ? "text-amber-400 bg-amber-500/10"
-                              : issue.status === "In Progress" ? "text-blue-400 bg-blue-500/10 animate-pulse"
-                              : "text-[var(--green)] bg-emerald-500/10"
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold tracking-wider uppercase border ${
+                              issue.status === STATUS.RESOLVED ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                              issue.status === STATUS.IN_PROGRESS ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                              "bg-[var(--cyan)]/10 text-[var(--cyan)] border-[var(--cyan)]/20"
                             }`}>
                               {issue.status}
                             </span>
@@ -691,8 +744,8 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                               onClick={() => {
                                 setSelectedIssue(issue);
                                 setStatusInput(issue.status);
-                                setAssignedDept(issue.suggestedDepartment || "");
-                                setAssignedOfficer(issue.assignedToName || "");
+                                setAssignedDept(issue.category || "");
+                                setAssignedOfficer(issue.assignedInspectorName || "");
                               }}
                               className="px-3 py-1 bg-[var(--cyan)] hover:scale-103 transition-transform text-slate-950 font-extrabold text-[10px] rounded-lg cursor-pointer"
                             >
@@ -875,7 +928,7 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                           </div>
                           
                           <button
-                            onClick={() => handleMergeAction(cluster.primary.id, match.id)}
+                            onClick={() => handleMergeAction(cluster.primary.uid, match.uid)}
                             className="px-3 py-1.5 text-[10px] font-bold bg-amber-500 hover:scale-103 text-slate-950 rounded-lg shrink-0 transition-transform cursor-pointer"
                           >
                             Merge Node
@@ -927,6 +980,55 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                 </div>
               )}
 
+              {/* Inspection Notes Block */}
+              {(selectedIssue.workCompleted || selectedIssue.materialsUsed || selectedIssue.estimatedCost || selectedIssue.timeSpent || selectedIssue.inspectionRemarks) && (
+                <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800 text-left">
+                  <span className="text-[9px] font-extrabold uppercase text-gray-400 border-b border-gray-800 pb-2 mb-2 block w-full">
+                    📋 Inspector Field Notes
+                  </span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    {selectedIssue.workCompleted && (
+                      <div><span className="text-gray-500 block text-[9px] uppercase font-mono">Work Completed</span><strong className="text-white">{selectedIssue.workCompleted}</strong></div>
+                    )}
+                    {selectedIssue.materialsUsed && (
+                      <div><span className="text-gray-500 block text-[9px] uppercase font-mono">Materials Used</span><strong className="text-white">{selectedIssue.materialsUsed}</strong></div>
+                    )}
+                    {selectedIssue.estimatedCost && (
+                      <div><span className="text-gray-500 block text-[9px] uppercase font-mono">Estimated Cost</span><strong className="text-white">₹{selectedIssue.estimatedCost}</strong></div>
+                    )}
+                    {selectedIssue.timeSpent && (
+                      <div><span className="text-gray-500 block text-[9px] uppercase font-mono">Time Spent</span><strong className="text-white">{selectedIssue.timeSpent}</strong></div>
+                    )}
+                  </div>
+                  {selectedIssue.inspectionRemarks && (
+                    <div className="mt-3 pt-2 border-t border-gray-800/50">
+                      <span className="text-gray-500 block text-[9px] uppercase font-mono mb-0.5">Remarks</span>
+                      <p className="text-[11px] text-gray-300">{selectedIssue.inspectionRemarks}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Citizen Rating Block */}
+              {selectedIssue.rating && (
+                <div className="bg-yellow-500/10 rounded-xl p-4 border border-yellow-500/20 text-left">
+                  <span className="text-[9px] font-extrabold uppercase text-yellow-500 border-b border-yellow-500/20 pb-2 mb-2 block w-full">
+                    ⭐ Citizen Resolution Rating
+                  </span>
+                  <div className="flex gap-1 mb-2">
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <Star key={star} className={`w-5 h-5 ${star <= selectedIssue.rating! ? 'fill-yellow-400 text-yellow-400' : 'text-gray-600'}`} />
+                    ))}
+                  </div>
+                  {selectedIssue.ratingFeedback && (
+                    <div className="mt-2 pt-2 border-t border-yellow-500/20">
+                      <span className="text-yellow-500 block text-[9px] uppercase font-mono mb-0.5">Feedback</span>
+                      <p className="text-[11px] text-yellow-100 italic">"{selectedIssue.ratingFeedback}"</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Status Update Form */}
               <form onSubmit={handleUpdateStatusSubmit} className="space-y-3.5 pt-3.5 border-t border-gray-800 text-xs">
                 
@@ -938,9 +1040,9 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                       onChange={(e: any) => setStatusInput(e.target.value)}
                       className="p-2.5 rounded-lg bg-slate-900 border border-gray-800 text-white outline-none"
                     >
-                      <option value="Open">Open (Log as queue)</option>
-                      <option value="In Progress">In Progress (Dispatch officers)</option>
-                      <option value="Resolved">Resolved (Commit as sealed)</option>
+                      <option value={STATUS.SUBMITTED}>Submitted (Log as queue)</option>
+                      <option value={STATUS.IN_PROGRESS}>In Progress (Dispatch officers)</option>
+                      <option value={STATUS.RESOLVED}>Resolved (Commit as sealed)</option>
                     </select>
                   </div>
 
@@ -1014,6 +1116,17 @@ export default function MunicipalityMgrDashboard({ user, issues, onRefresh }: Mu
                   </button>
                 </div>
               </form>
+              
+              {selectedIssue.status === STATUS.RESOLVED && (
+                <div className="mt-4 pt-4 border-t border-gray-800">
+                  <button
+                    onClick={() => generateResolutionCertificate(selectedIssue, user)}
+                    className="w-full py-3 bg-[var(--cyan)]/20 text-[var(--cyan)] font-bold rounded-xl text-xs hover:bg-[var(--cyan)]/30 transition-colors flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <Download className="w-4 h-4" /> Download Resolution Report (PDF)
+                  </button>
+                </div>
+              )}
             </div>
 
           </div>

@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { UserProfile, Issue } from "../types";
-import { signOut } from "firebase/auth";
-import { auth } from "../firebase-init";
+import { authService } from "../services/authService";
 import { 
   User, 
   Mail, 
@@ -16,23 +15,22 @@ import {
   Sun
 } from "lucide-react";
 
+import { useLiveIssues } from "../hooks/useLiveIssues";
+
 interface ProfilePageProps {
   user: UserProfile;
-  issues: Issue[];
   theme: "light" | "dark";
 }
 
-export default function ProfilePage({ user, issues, theme }: ProfilePageProps) {
-  const [userIssues, setUserIssues] = useState<Issue[]>([]);
-
-  useEffect(() => {
-    const filtered = issues.filter(issue => issue.reportedBy === user.id);
-    setUserIssues(filtered);
-  }, [issues, user.id]);
+export default function ProfilePage({ user, theme }: ProfilePageProps) {
+  const { issues: userIssues } = useLiveIssues({
+    scope: "user",
+    userId: user.uid
+  });
 
   const stats = [
     { name: "Reports Filed", value: userIssues.length, icon: BarChart },
-    { name: "Reputation Points", value: user.points, icon: Award },
+    { name: "Reputation Points", value: user.xp, icon: Award },
     { name: "Success Rate", value: `${userIssues.filter(i => i.status === "Resolved").length / (userIssues.length || 1) * 100}%`, icon: TrendingUp },
     { name: "Issues Resolved", value: userIssues.filter(i => i.status === "Resolved").length, icon: CheckCircle }
   ];
@@ -58,13 +56,13 @@ export default function ProfilePage({ user, issues, theme }: ProfilePageProps) {
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1 text-xs text-gray-400 mt-3">
             <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {user.email}</span>
             <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> {user.phone}</span>
-            <span className="flex items-center gap-1.5"><Home className="w-3.5 h-3.5" /> {user.zone}</span>
+            <span className="flex items-center gap-1.5"><Home className="w-3.5 h-3.5" /> {user.assignedState}</span>
           </div>
         </div>
 
         <button 
-          onClick={() => signOut(auth)}
-          className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+          onClick={() => authService.logout()}
+          className="flex items-center space-x-2 bg-slate-800/80 hover:bg-red-500/10 text-gray-300 hover:text-red-400 border border-slate-700 hover:border-red-500/30 px-6 py-2.5 rounded-xl transition-all duration-300"
         >
           <LogOut className="w-4 h-4" />
           Sign Out
@@ -89,10 +87,10 @@ export default function ProfilePage({ user, issues, theme }: ProfilePageProps) {
         <h3 className="font-display font-bold text-lg text-[var(--text-1)] mb-4">Recent Grievance Reports</h3>
         <div className="flex flex-col gap-3">
           {userIssues.slice(0, 5).map(issue => (
-            <div key={issue.id} className="glass p-4 rounded-xl border border-slate-200/50 dark:border-white/10 flex items-center justify-between text-xs">
+            <div key={issue.complaintId} className="glass p-4 rounded-xl border border-slate-200/50 dark:border-white/10 flex items-center justify-between text-xs">
               <div>
                 <p className="font-bold text-[var(--text-1)]">{issue.title}</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">{issue.category} &bull; {issue.address}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{issue.category} &bull; {issue.landmark}</p>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${ 
                 issue.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400' : 

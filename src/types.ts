@@ -1,60 +1,156 @@
-export type UserRole = "Citizen" | "Authority" | "MunicipalityMgr";
+import { RoleType } from "./constants/roles";
+import { PriorityType } from "./constants/priorities";
+import { StatusType } from "./constants/status";
+
+export type UserRole = RoleType;
 
 export interface UserProfile {
-  id: string;
+  uid: string;
   name: string;
   email: string;
-  role: UserRole;
-  avatar: string | null;
   phone?: string;
-  address?: string;
-  department?: string;
-  zone?: string;
-  points: number;
+  role: UserRole;
+  assignedState: string | null;
+  assignedDistrict: string | null;
+  assignedULBs: string[];
+  xp: number;
   badges: string[];
-  reportCount: number;
-  isActive: boolean;
   createdAt: any;
   lastLogin: any;
-  updatedAt?: any;
+  isActive: boolean;
+  avatar?: string | null;
+}
+
+export interface TimelineItem {
+  id: string;
+  status: StatusType;
+  timestamp: any;
+  updatedByUID?: string;
+  updatedByName?: string;
+  updatedByRole?: string;
+  remarks?: string;
+}
+
+export interface Comment {
+  userUID: string;
+  userName: string;
+  role: string;
+  message: string;
+  createdAt: any;
 }
 
 export interface Issue {
-  id: string;
+  uid?: string; // The generated random Firestore ID
+  complaintId: string; // The human-readable NC- ID
+  sequenceNumber?: number; // The sequential number for the district
   title: string;
   description: string;
   category: string;
-  location: string;
-  address: string;
-  lat: number;
-  lng: number;
-  zone: string;
-  priority: "Low" | "Medium" | "High" | "Critical";
-  status: "Open" | "In Progress" | "Resolved";
-  reportedBy: string;
-  reporterName: string;
-  reporterEmail: string;
-  assignedTo?: string;
-  assignedToName?: string;
-  imageUrl?: string;
-  confirmations: Array<{ userId: string; name: string; confirmedAt: any }>;
-  confirmCount: number;
-  isDuplicate: boolean;
-  duplicateOf: string | null;
-  duplicates: string[];
-  hotScore: number;
-  comments: Array<{ id: string; userId: string; name: string; text: string; createdAt: any }>;
-  rating: number | null;
-  suggestedDepartment?: string;
-  resolutionNotes?: string;
-  beforePhotoUrl?: string | null;
-  afterPhotoUrl?: string | null;
-  source: "app" | "csv_import" | "survey_import";
-  importBatch: string | null;
-  resolvedAt?: any;
-  acknowledgedAt?: any;
+  priority: PriorityType;
+  status: StatusType;
+  state?: string;
+  district?: string;
+  ulb?: string;
+  area?: string;
+  landmark?: string;
+  latitude?: number;
+  longitude?: number;
+  reportedByUID: string;
+  reportedByName: string;
+  assignedInspectorUID?: string | null;
+  assignedInspectorName?: string | null;
+  assignedInspectorEmail?: string | null;
+  assignedDistrict?: string | null;
+  assignedState?: string | null;
+  communitySupportCount: number;
   createdAt: any;
   updatedAt: any;
+  lastUpdatedBy?: string | null;
+  lastUpdatedAt?: any;
+  inspectionImages: string[];
+  resolutionImages: string[];
+  timeline: TimelineItem[];
+  comments: Comment[];
+  
+  rating?: number | null;
+  ratingFeedback?: string | null;
+  isDuplicate?: boolean;
+  duplicateOf?: string | null;
+  duplicates?: string[];
+  hotScore?: number;
+  source?: string;
+  importBatch?: string | null;
+  
+  recommendationStatus?: 'RESOLVE' | 'REJECT' | null;
+  recommendationRemarks?: string | null;
+  recommendationTimestamp?: any;
+  inspectionStartedAt?: any;
+  inspectionCompletedAt?: any;
+  
+  // Inspection Notes
+  workCompleted?: string | null;
+  materialsUsed?: string | null;
+  estimatedCost?: string | null;
+  timeSpent?: string | null;
+  inspectionRemarks?: string | null;
+}
+
+export type NotificationType = 
+  | "COMPLAINT_SUBMITTED" 
+  | "INSPECTOR_ASSIGNED" 
+  | "CASE_ACCEPTED" 
+  | "INSPECTION_STARTED" 
+  | "EVIDENCE_UPLOADED" 
+  | "INSPECTION_COMPLETED" 
+  | "NOTES_SUBMITTED" 
+  | "HQ_REVIEW_STARTED" 
+  | "HQ_APPROVED" 
+  | "HQ_REJECTED" 
+  | "COMPLAINT_RESOLVED" 
+  | "RATING_REQUEST" 
+  | "RATING_RECEIVED"
+  | "BADGE_EARNED"
+  | "POINTS_AWARDED"
+  | "issue_status_changed"
+  | "issue_resolved"
+  | "badge_earned"
+  | "points_awarded";
+
+export type NotificationCategory = "SYSTEM" | "WORKFLOW" | "SECURITY" | "ACHIEVEMENT" | "REMINDER";
+export type NotificationSeverity = "low" | "medium" | "high" | "critical";
+export type DeliveryStatus = "pending" | "delivered" | "read";
+
+export interface Notification {
+  notificationId?: string;
+  type: NotificationType | string; 
+  category?: NotificationCategory;
+  title: string;
+  message: string;
+  severity?: NotificationSeverity;
+  version?: number;
+  read: boolean;
+  readAt?: any;
+  deliveryStatus?: DeliveryStatus;
+  
+  actorUID?: string;
+  targetUID?: string; // preferred over userUID
+  complaintUID?: string;
+  complaintId?: string;
+  state?: string;
+  district?: string;
+  metadata?: Record<string, unknown>;
+
+  // Legacy fields for backward compatibility
+  userUID?: string;
+  actionRoute?: string;
+  relatedComplaintId?: string;
+  createdAt: any;
+}
+
+export interface IssueSupport {
+  issueId: string;
+  userUID: string;
+  supportedAt: any;
 }
 
 export interface SurveyResponse {
@@ -98,29 +194,10 @@ export interface ImportBatch {
   createdAt: any;
 }
 
-export interface Zone {
-  id: string;
-  name: string;
-  description: string;
-  assignedAuthority: string;
-  bounds?: { north: number; south: number; east: number; west: number };
-  createdAt: any;
-  updatedAt?: any;
-}
-
 export interface ActivityLog {
   id: string;
   type: string;
   data: any;
   userId: string;
   timestamp: any;
-}
-
-export interface Notification {
-  id: string;
-  userId: string;
-  message: string;
-  type: "issue_status_changed" | "issue_resolved" | "badge_earned" | "points_awarded" | "duplicate_merged" | "system";
-  read: boolean;
-  createdAt: any;
 }

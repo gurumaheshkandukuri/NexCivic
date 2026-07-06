@@ -13,8 +13,10 @@ import {
   RefreshCw,
   Video
 } from "lucide-react";
-import { createIssue, confirmIssue } from "../dbService";
+
 import { UserProfile, Issue } from "../types";
+import { useLiveIssues } from "../hooks/useLiveIssues";
+import { createIssue, confirmIssue } from "../services/issueService";
 import confetti from "canvas-confetti";
 
 declare const L: any;
@@ -52,12 +54,13 @@ const PLACE_SUGGESTIONS = [
 
 interface ReportIssueProps {
   user: UserProfile;
-  issues: Issue[];
+  
   onSuccess: () => void;
   setActiveTab: (tab: string) => void;
 }
 
-export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: ReportIssueProps) {
+export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIssueProps) {
+  const { issues } = useLiveIssues({ scope: "all" });
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("Other");
@@ -65,8 +68,13 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
   
   // Landmark intuitive location fields rather than coordinates raw numbers
   const [landmark, setLandmark] = useState("");
-  const [district, setDistrict] = useState("Mumbai Suburban");
-  const [city, setCity] = useState("Mumbai");
+  const [state, setState] = useState("");
+  const [district, setDistrict] = useState("");
+  const [ulb, setUlb] = useState("");
+
+  const states = ["Maharashtra", "Telangana", "Delhi", "Karnataka"];
+  const districtsList = ["Mumbai Suburban", "Mumbai City", "Hyderabad", "Warangal"];
+  const ulbsList = ["BMC", "GHMC", "NDMC"];
 
   // Location suggestions autocomplete
   const [matchingSuggestions, setMatchingSuggestions] = useState<typeof PLACE_SUGGESTIONS>([]);
@@ -91,7 +99,8 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
   const handleSelectSuggestion = (item: typeof PLACE_SUGGESTIONS[0]) => {
     setLandmark(item.landmark);
     setDistrict(item.district);
-    setCity(item.city);
+      setState("Maharashtra");
+      setUlb("BMC");
     setLat(item.lat);
     setLng(item.lng);
     setAddress(`${item.landmark}, ${item.district}, ${item.city}`);
@@ -133,6 +142,7 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
 
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [createdId, setCreatedId] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -148,9 +158,9 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
         if (issue.status === "Resolved") return false;
         
         const lat1 = lat * Math.PI / 180;
-        const lat2 = issue.lat * Math.PI / 180;
-        const deltaLat = (issue.lat - lat) * Math.PI / 180;
-        const deltaLng = (issue.lng - lng) * Math.PI / 180;
+        const lat2 = issue.latitude * Math.PI / 180;
+        const deltaLat = (issue.latitude - lat) * Math.PI / 180;
+        const deltaLng = (issue.longitude - lng) * Math.PI / 180;
 
         const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
                   Math.cos(lat1) * Math.cos(lat2) *
@@ -277,7 +287,7 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
             const fetchedDistrict = addr.suburb || addr.neighbourhood || addr.state_district || addr.county || "Hyderabad";
             const fetchedLandmark = addr.amenity || addr.building || addr.road || addr.industrial || addr.commercial || addr.subway || addr.railway || "";
             
-            setCity(fetchedCity);
+            setUlb(fetchedCity);
             setDistrict(fetchedDistrict);
             if (fetchedLandmark) {
               setLandmark(fetchedLandmark);
@@ -380,28 +390,42 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
   const proceedWithSubmission = async () => {
     setLoading(true);
 
-    const fullDetailsLocation = `${landmark ? `${landmark}, ` : ""}${district}, ${city}`;
+    const fullDetailsLocation = `${landmark ? `${landmark}, ` : ""}${district}, ${ulb}`;
 
     try {
-      const id = await createIssue({
+      const res = await createIssue({
         title,
         description,
         category,
         priority,
-        location: city,
-        address: address || fullDetailsLocation,
-        lat,
-        lng,
-        zone: user.zone || "Zone A",
-        reportedBy: user.id,
-        reporterName: user.name,
-        reporterEmail: user.email,
-        imageUrl: image || "",
-        suggestedDepartment: ''
-      });
+        status: "Open",
+        latitude: lat,
+        longitude: lng,
+        district: district,
+        state: state,
+        ulb: ulb,
+        area: ulb,
+        landmark: landmark,
+        address: address || `${landmark ? landmark + ", " : ""}${district}, ${ulb}`,
+        reportedByUID: user.uid,
+        reportedByName: user.name,
+        assignedInspectorEmail: user.email,
+        communitySupportCount: 0,
+        inspectionImages: [],
+        resolutionImages: [],
+        timeline: [],
+        comments: [],
+        imageUrl: image || ""
+      } as any);
 
-      setCreatedId(id);
-      setSuccess(true);
+      if (!res) {
+        alert('Queued for sync: The network is currently unavailable. Your complaint will be synchronized once the connection is restored.');
+        setCreatedId('offline-queued');
+        setSuccess(true);
+      } else {
+        setCreatedId(res.id);
+        setSuccess(true);
+      }
       
       // confetti celebration
       confetti({
@@ -438,7 +462,7 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
 
   const handleUpvoteDuplicate = async () => {
     if (!similarIssue) return;
-    await confirmIssue(similarIssue.id, user.id, user.name);
+    await confirmIssue(similarIssue.id || "", user.uid, user.name);
     confetti({ particleCount: 30 });
     onSuccess();
     setActiveTab("dashboard");
@@ -677,7 +701,7 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
               type="text"
               required
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => { setTitle(e.target.value); setErrors(prev => ({...prev, title: ""})); }}
               placeholder="e.g., Deep Sewer Grid Overflow"
               className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-gray-800 hover:border-slate-300 dark:hover:border-slate-600 focus:border-[var(--cyan)] dark:focus:border-[var(--cyan)] outline-none text-xs text-[var(--text-1)] w-full transition-all"
             />
@@ -688,19 +712,35 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
               <label className="text-[10px] uppercase font-bold text-[var(--text-2)] tracking-wider">
                 Category
               </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-gray-800 hover:border-slate-300 dark:hover:border-slate-600 focus:border-[var(--cyan)] dark:focus:border-[var(--cyan)] outline-none text-xs text-[var(--text-1)] w-full transition-all"
-              >
-                <option value="Pothole">Pothole</option>
-                <option value="Garbage Overflow">Garbage Overflow</option>
-                <option value="Water Leakage">Water Leakage</option>
-                <option value="Street Light">Street Light</option>
-                <option value="Drainage">Drainage</option>
-                <option value="Infrastructure">Infrastructure</option>
-                <option value="Other">Other</option>
-              </select>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {[
+                  "Garbage Overflow", 
+                  "Drainage Overflow", 
+                  "Road Damage", 
+                  "Street Light", 
+                  "Water Leakage", 
+                  "Public Property Damage", 
+                  "Traffic Signal", 
+                  "Illegal Dumping", 
+                  "Dead Animal", 
+                  "Others"
+                ].map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => { setCategory(cat as any); setErrors(prev => ({...prev, category: ""})); }}
+                    className={`p-2 rounded-xl text-xs font-bold border transition-all text-left flex items-center justify-between ${
+                      category === cat
+                        ? "bg-[var(--cyan)]/10 border-[var(--cyan)] text-[var(--cyan)] shadow-[0_0_10px_rgba(0,186,220,0.1)]"
+                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-gray-800 text-[var(--text-2)] hover:border-slate-300 dark:hover:border-slate-600"
+                    }`}
+                  >
+                    {cat}
+                    {category === cat && <CheckCircle2 className="w-3 h-3" />}
+                  </button>
+                ))}
+              </div>
+              {errors.category && <span className="text-red-500 text-[10px] font-bold">{errors.category}</span>}
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -712,7 +752,7 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
                   <button
                     key={pri}
                     type="button"
-                    onClick={() => setPriority(pri)}
+                    onClick={() => { setPriority(pri as any); setErrors(prev => ({...prev, priority: ""})); }}
                     className={`py-2 px-1 rounded-lg text-[9px] uppercase font-bold border transition-all ${
                       priority === pri 
                         ? pri === "Critical" ? "bg-[var(--red)]/15 border-[var(--red)] text-[var(--red)]" 
@@ -752,7 +792,7 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
                 type="text"
                 required
                 value={landmark}
-                onChange={(e) => handleLandmarkChange(e.target.value)}
+                onChange={(e) => { handleLandmarkChange(e.target.value); setErrors(prev => ({...prev, landmark: ""})); }}
                 onFocus={() => {
                   if (landmark.trim()) setShowLocationSuggestions(true);
                 }}
@@ -782,30 +822,50 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] uppercase font-bold text-[var(--text-2)] tracking-wider">
-                District / Area
+                State
               </label>
-              <input 
-                type="text"
+              <select
                 required
-                value={district}
-                onChange={(e) => setDistrict(e.target.value)}
-                placeholder="e.g., Andheri East"
+                value={state}
+                onChange={(e) => { setState(e.target.value); setErrors(prev => ({...prev, state: ""})); }}
                 className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-gray-800 hover:border-slate-300 dark:hover:border-slate-600 focus:border-[var(--cyan)] dark:focus:border-[var(--cyan)] outline-none text-xs text-[var(--text-1)] w-full transition-all"
-              />
+              >
+                <option value="">Select State</option>
+                {states.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              {errors.state && <span className="text-red-500 text-[10px] font-bold">{errors.state}</span>}
             </div>
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] uppercase font-bold text-[var(--text-2)] tracking-wider">
-                City / Town
+                District
               </label>
-              <input 
-                type="text"
+              <select
                 required
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Mumbai"
+                value={district}
+                onChange={(e) => { setDistrict(e.target.value); setErrors(prev => ({...prev, district: ""})); }}
                 className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-gray-800 hover:border-slate-300 dark:hover:border-slate-600 focus:border-[var(--cyan)] dark:focus:border-[var(--cyan)] outline-none text-xs text-[var(--text-1)] w-full transition-all"
-              />
+              >
+                <option value="">Select District</option>
+                {districtsList.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+              {errors.district && <span className="text-red-500 text-[10px] font-bold">{errors.district}</span>}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] uppercase font-bold text-[var(--text-2)] tracking-wider">
+                ULB (Urban Local Body)
+              </label>
+              <select
+                required
+                value={ulb}
+                onChange={(e) => { setUlb(e.target.value); setErrors(prev => ({...prev, ulb: ""})); }}
+                className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-gray-800 hover:border-slate-300 dark:hover:border-slate-600 focus:border-[var(--cyan)] dark:focus:border-[var(--cyan)] outline-none text-xs text-[var(--text-1)] w-full transition-all"
+              >
+                <option value="">Select ULB</option>
+                {ulbsList.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+              {errors.ulb && <span className="text-red-500 text-[10px] font-bold">{errors.ulb}</span>}
             </div>
           </div>
 
@@ -817,7 +877,7 @@ export default function ReportIssue({ user, issues, onSuccess, setActiveTab }: R
               rows={4}
               required
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => { setDescription(e.target.value); setErrors(prev => ({...prev, description: ""})); }}
               placeholder="Describe the nature of the issue with appropriate landmark details..."
               className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-gray-800 hover:border-slate-300 dark:hover:border-slate-600 focus:border-[var(--cyan)] dark:focus:border-[var(--cyan)] outline-none text-xs text-[var(--text-1)] w-full transition-all resize-none"
             />

@@ -1,10 +1,11 @@
 import { UserProfile, Issue } from "../types";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Award, TrendingUp, FileText, CheckCircle, AlertTriangle, MapPin, Tag, Calendar } from 'lucide-react';
+import { Award, TrendingUp, FileText, CheckCircle, AlertTriangle, MapPin, Tag, Calendar, X, Star, Download, Image as ImageIcon } from 'lucide-react';
+import { useState } from 'react';
+import { useLiveIssues } from '../hooks/useLiveIssues';
 
 interface CitizenDashboardProps {
   user: UserProfile;
-  issues: Issue[];
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
@@ -12,8 +13,16 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 const clayCardStyle = "bg-slate-800/40 backdrop-blur-sm p-6 rounded-2xl border border-slate-700/50 shadow-lg transition-all duration-300 hover:border-slate-600/80 hover:bg-slate-800/60";
 
 
-export default function CitizenDashboard({ user, issues }: CitizenDashboardProps) {
-  const userIssues = issues.filter(issue => issue.reportedBy === user.id);
+export default function CitizenDashboard({ user }: CitizenDashboardProps) {
+  const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+  const [rating, setRating] = useState(0);
+  const [commentText, setCommentText] = useState('');
+
+  const handleAddComment = (commentText: string) => {};
+  const handleSubmitRating = (rating: number) => { onRefresh(); };
+
+  const { issues: userIssues, isSyncing } = useLiveIssues({ scope: 'user', userId: user.uid });
+  const onRefresh = () => {};
 
   const issuesByStatus = userIssues.reduce((acc, issue) => {
     acc[issue.status] = (acc[issue.status] || 0) + 1;
@@ -77,7 +86,7 @@ export default function CitizenDashboard({ user, issues }: CitizenDashboardProps
             <Award className="h-6 w-6 text-orange-400 mr-4" />
             <div>
               <p className="text-sm text-gray-400">Community Points</p>
-              <p className="text-2xl font-bold text-white">{user.points || 0}</p>
+              <p className="text-2xl font-bold text-white">{user.xp || 0}</p>
             </div>
           </div>
         </div>
@@ -104,7 +113,7 @@ export default function CitizenDashboard({ user, issues }: CitizenDashboardProps
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                outerRadius={100}
+                outerRadius={80}
                 fill="#8884d8"
                 dataKey="value"
                 nameKey="name"
@@ -125,7 +134,7 @@ export default function CitizenDashboard({ user, issues }: CitizenDashboardProps
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {userIssues.length > 0 ? (
             userIssues.slice(0, 9).map((issue) => (
-              <div key={issue.id} className={`${clayCardStyle} flex flex-col group`}>
+              <div key={issue.id} className={`${clayCardStyle} flex flex-col group cursor-pointer hover:ring-2 hover:ring-cyan-500/50`} onClick={() => setSelectedIssue(issue)}>
                 {issue.imageUrl && (
                   <div className="w-full h-40 mb-4 rounded-lg overflow-hidden">
                     <img src={issue.imageUrl} alt={issue.title} className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-300" />

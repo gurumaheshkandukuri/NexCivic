@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase-init";
+import { authService } from "./services/authService";
 import { motion } from "framer-motion";
 import { 
   getUserProfile, 
-  subscribeAllIssues, 
-  checkAndSeedDatabase 
-} from "./dbService";
-import { Issue, UserProfile } from "./types";
+} from "./services/userService";
+import { ROLES } from "./constants/roles";
+import { UserProfile } from "./types";
 
 // Import modules
 import Navbar from "./components/Navbar";
@@ -25,28 +25,28 @@ import ProfilePage from "./components/ProfilePage";
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [issues, setIssues] = useState<Issue[]>([]);
 
   const [activeTab, setActiveTab] = useState<string>("landing");
   const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string>("");
+
+  const canAccessRoute = (currentUser: UserProfile | null, route: string) => {
+    const publicRoutes = ["landing", "map", "telangana", "auth"];
+    if (publicRoutes.includes(route)) return true;
+    if (!currentUser) return false;
+    
+    if (route === "report") return currentUser.role === ROLES.CITIZEN;
+    
+    return true; // Dashboard and Profile render appropriate content per role natively
+  };
 
   // Scroll to top on active tab change to fix navigation scroll continuity
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [activeTab]);
 
-  // Initialize and Seed empty database once on cold-boot
-  useEffect(() => {
-    const initializeDataSystem = async () => {
-      try {
-        await checkAndSeedDatabase();
-      } catch (err) {
-        console.warn("Database seeding skipped or errored:", err);
-      }
-    };
-    initializeDataSystem();
-  }, []);
+
 
   // Listen to Auth State
   useEffect(() => {
@@ -56,14 +56,39 @@ export default function App() {
       const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
         if (firebaseUser) {
           try {
-            const profile = await getUserProfile(firebaseUser.uid);
-            setUser(profile);
+            let profile = await getUserProfile(firebaseUser.uid);
+            
+            // Retry logic to fix the Signup Race Condition:
+            // When a new user signs up, Firebase Auth triggers this callback immediately,
+            // BEFORE AuthPage.tsx finishes writing the Firestore profile.
+            if (!profile) {
+              // Wait up to 3 seconds for the profile to be created
+              for (let i = 0; i < 3; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                profile = await getUserProfile(firebaseUser.uid);
+                if (profile) break;
+              }
+            }
+
+            if (profile) {
+              setUser(profile);
+              setAuthError("");
+            } else {
+              await authService.logout();
+              setUser(null);
+              setAuthError("Account not configured properly. Profile data missing.");
+              setActiveTab("auth");
+            }
           } catch (err) {
             console.error("Auth status sync errored:", err);
+            await authService.logout();
             setUser(null);
+            setAuthError("Authentication error occurred.");
+            setActiveTab("auth");
           }
         } else {
           setUser(null);
+          setAuthError("");
         }
         setLoading(false);
       });
@@ -72,14 +97,6 @@ export default function App() {
     };
 
     initializeUser();
-  }, []);
-
-  // Subscribe to Live Issues Feed from Firestore
-  useEffect(() => {
-    const unsub = subscribeAllIssues((hotIssues) => {
-      setIssues(hotIssues);
-    });
-    return () => unsub && unsub();
   }, []);
 
   // Apply visual theme to DOM
@@ -94,6 +111,15 @@ export default function App() {
       setActiveTab(hash);
     }
   }, []);
+
+  // Role-Based Route Guard
+  useEffect(() => {
+    if (!loading) {
+      if (!canAccessRoute(user, activeTab)) {
+        setActiveTab(user ? "dashboard" : "auth");
+      }
+    }
+  }, [user, activeTab, loading]);
 
   // Update URL hash when activeTab changes
   useEffect(() => {
@@ -160,7 +186,6 @@ export default function App() {
         {activeTab === "landing" && (
           <div className="animate-fadeIn">
             <LandingHero 
-              issues={issues} 
               users={[]} 
               setActiveTab={setActiveTab} 
               user={user} 
@@ -173,9 +198,8 @@ export default function App() {
         {activeTab === "map" && (
           <div className="animate-fadeIn">
             <MapExplorer 
-              issues={issues} 
               user={user} 
-              onRefresh={handleRefresh} 
+              
             />
           </div>
         )}
@@ -186,11 +210,10 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === "report" && user && user.role === "Citizen" && (
+        {activeTab === "report" && user && user.role === ROLES.CITIZEN && (
           <div className="animate-fadeIn">
             <ReportIssue 
               user={user} 
-              issues={issues} 
               onSuccess={handleRefresh} 
               setActiveTab={setActiveTab} 
             />
@@ -200,22 +223,19 @@ export default function App() {
         {activeTab === "dashboard" && (
           <div className="animate-fadeIn">
             {user ? (
-              user.role === "Citizen" ? (
+              user.role === ROLES.CITIZEN ? (
                 <CitizenDashboard 
                   user={user} 
-                  issues={issues} 
                 />
-              ) : user.role === "MunicipalityMgr" ? (
+              ) : user.role === ROLES.MUNICIPALITY_HQ ? (
                 <MunicipalityMgrDashboard 
                   user={user} 
-                  issues={issues} 
-                  onRefresh={handleRefresh} 
+                  
                 />
               ) : (
                 <AdminPanel 
                   user={user} 
-                  issues={issues} 
-                  onRefresh={handleRefresh} 
+                  
                 />
               )
             ) : (
@@ -228,7 +248,6 @@ export default function App() {
           <div className="animate-fadeIn">
             <ProfilePage 
               user={user} 
-              issues={issues} 
               theme={theme} 
             />
           </div>
@@ -236,7 +255,7 @@ export default function App() {
 
         {activeTab === "auth" && (
           <div className="animate-fadeIn">
-            <AuthPage onSuccess={() => setActiveTab("dashboard")} theme={theme} />
+            <AuthPage onSuccess={() => setActiveTab("dashboard")} theme={theme} globalError={authError} />
           </div>
         )}
 

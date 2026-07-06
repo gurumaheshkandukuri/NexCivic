@@ -1,26 +1,82 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
+    
+    // Helper functions for roles
+    function isCitizen() {
+      return getUserData().role == 'CITIZEN';
+    }
+    
+    function isFieldInspector() {
+      return getUserData().role == 'FIELD_INSPECTOR';
+    }
+    
+    function isMunicipalityHQ() {
+      return getUserData().role == 'MUNICIPALITY_HQ' || getUserData().role == 'MunicipalityHQ';
+    }
+
+    match /users/{userId} {
+      // Users can read their own profile. Anyone can read FIELD_INSPECTOR profiles to allow complaint auto-assignment.
+      allow read: if request.auth != null && (request.auth.uid == userId || resource.data.role == 'FIELD_INSPECTOR');
+      // Only the user can edit their own profile
+      allow write: if request.auth != null && (request.auth.uid == userId || isMunicipalityHQ());
+      allow delete: if request.auth != null && isMunicipalityHQ();
+    }
+    
     match /issues/{issueId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      
+      // Citizens can create issues
+      allow create: if request.auth != null;
+      
+      // Update logic based on roles
+      allow update: if request.auth != null && (
+        // Field Inspector: can only update issues assigned to them
+        (isFieldInspector() && resource.data.assignedInspectorUID == request.auth.uid) ||
+        // Municipality HQ: can update any issue for auditing
+        (isMunicipalityHQ()) ||
+        // Citizen: can update their own issues (e.g. adding comments or ratings)
+        (isCitizen() && resource.data.reportedByUID == request.auth.uid) ||
+        // General fallback for commenters (if needed, though above covers most valid app flows)
+        (isCitizen() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt', 'lastUpdatedBy', 'lastUpdatedAt']))
+      );
+      
+      allow delete: if isMunicipalityHQ(); // Temporarily allow HQ to delete issues
     }
-    match /notifications/{notificationId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == resource.data.userId;
-    }
-     match /activity_log/{logId} {
+
+    match /counters/{counterId} {
+      // Any authenticated user can read and increment the counter during issue creation
       allow read, write: if request.auth != null;
     }
+    
+    match /notifications/{notificationId} {
+      // Users can only read their own notifications
+      allow read: if request.auth != null && request.auth.uid == resource.data.userUID;
+      // Anyone can create a notification (e.g. system sending to inspector, or citizen commenting)
+      allow create: if request.auth != null && request.resource.data.userUID != null;
+      // Only the notification owner can update (mark as read) or delete
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userUID;
+    }
+    
+    match /issue_supports/{supportId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    match /activity_log/{logId} {
+      allow read, write: if request.auth != null;
+    }
+    
     match /zones/{zoneId} {
       allow read, write: if request.auth != null;
     }
+    
     match /import_batches/{batchId} {
       allow read, write: if request.auth != null;
     }
+    
     match /survey_responses/{responseId} {
       allow read, write: if request.auth != null;
     }

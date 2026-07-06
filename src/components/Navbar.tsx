@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { UserProfile, Notification } from "../types";
 import { 
   Sun, 
   Moon, 
@@ -17,10 +18,11 @@ import {
   ShieldCheck,
   Info
 } from "lucide-react";
-import { UserProfile, Notification } from "../types";
-import { auth } from "../firebase-init";
-import { signOut } from "firebase/auth";
-import { subscribeNotifications, markNotificationAsRead, markAllNotificationsAsRead } from "../dbService";
+import { markNotificationAsRead, markAllNotificationsAsRead } from "../services/notificationService";
+import { useLiveNotifications } from "../hooks/useLiveNotifications";
+import { useClickOutside } from "../hooks/useClickOutside";
+import { ROLES } from "../constants/roles";
+import { authService } from "../services/authService";
 import Logo from "./Logo";
 
 interface NavbarProps {
@@ -43,8 +45,14 @@ export default function Navbar({
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+
   const [scrolled, setScrolled] = useState(false);
+
+  const notifRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  useClickOutside(notifRef, () => setNotifDropdownOpen(false));
+  useClickOutside(profileRef, () => setProfileDropdownOpen(false));
 
   useEffect(() => {
     const handleScroll = () => {
@@ -58,36 +66,32 @@ export default function Navbar({
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    const unsub = subscribeNotifications(user.id, (notifs) => {
-      setNotifications(notifs);
-    });
-    return () => unsub && unsub();
-  }, [user]);
+  const { notifications, isSyncing } = useLiveNotifications(user?.uid);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
     localStorage.removeItem("nex_civic_simulated_user");
-    signOut(auth);
+    await authService.logout();
     setProfileDropdownOpen(false);
     window.location.reload();
   };
 
   const handleNotificationClick = async (notif: Notification) => {
     setNotifDropdownOpen(false);
-    await markNotificationAsRead(notif.id);
+    if (notif.notificationId) {
+      await markNotificationAsRead(notif.notificationId);
+    }
     
     // Parse issue reference if any from message pattern
-    const match = notif.message.match(/issue "([^"]+)"|problem "([^"]+)"/i);
+    const match = notif.message?.match(/issue "([^"]+)"|problem "([^"]+)"/i);
     // Open main explorer
-    setActiveTab(user?.role === "Citizen" ? "dashboard" : "dashboard");
+    setActiveTab(user?.role === ROLES.CITIZEN ? "dashboard" : "dashboard");
   };
 
   const handleMarkAllRead = async () => {
     if (!user) return;
-    await markAllNotificationsAsRead(user.id);
+    await markAllNotificationsAsRead(user.uid);
   };
 
   return (
@@ -141,7 +145,7 @@ export default function Navbar({
 
         {user && (
           <>
-            {user.role === "Citizen" && (
+            {user.role === ROLES.CITIZEN && (
               <button
                 onClick={() => setActiveTab("report")}
                 className="px-4 py-2 h-9 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer clay-btn border border-white/20 transition-all hover:scale-105"
@@ -159,9 +163,9 @@ export default function Navbar({
               }`}
             >
               <LayoutDashboard className="w-3.5 h-3.5" />
-              {user.role === "Citizen" && "Citizen Panel"}
-              {user.role === "Authority" && "Staff Terminal"}
-              {user.role === "MunicipalityMgr" && "HQ Executive Desk"}
+              {user.role === ROLES.CITIZEN && "Citizen Panel"}
+              {user.role === ROLES.FIELD_INSPECTOR && "Staff Terminal"}
+              {user.role === ROLES.MUNICIPALITY_HQ && "HQ Executive Desk"}
             </button>
           </>
         )}
@@ -190,9 +194,12 @@ export default function Navbar({
         {user && (
           <>
             {/* Interactive Bell dropdown */}
-            <div className="relative">
+            <div className="relative" ref={notifRef}>
               <button
-                onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
+                onClick={() => {
+                  if (!notifDropdownOpen) setProfileDropdownOpen(false);
+                  setNotifDropdownOpen(!notifDropdownOpen);
+                }}
                 className="p-2 rounded-lg text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-slate-100 dark:hover:bg-white/[0.04] relative transition-all"
               >
                 <Bell className="w-5 h-5" />
@@ -252,9 +259,12 @@ export default function Navbar({
             </div>
 
             {/* User Profile settings action */}
-            <div className="relative">
+            <div className="relative" ref={profileRef}>
               <button
-                onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                onClick={() => {
+                  if (!profileDropdownOpen) setNotifDropdownOpen(false);
+                  setProfileDropdownOpen(!profileDropdownOpen);
+                }}
                 className="flex items-center gap-1 pl-1 pr-2 py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.04] border border-transparent hover:border-slate-200 dark:hover:border-gray-700/20 transition-all text-xs"
               >
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[var(--indigo)] to-[var(--violet)] flex items-center justify-center text-white font-extrabold shadow-md">
@@ -271,7 +281,7 @@ export default function Navbar({
                 <div className="absolute right-0 mt-3 w-56 glass rounded-2xl p-2 shadow-2xl border border-slate-200 dark:border-white/10 z-50 flex flex-col gap-0.5 text-left bg-white/95 dark:bg-slate-950/95">
                   <div className="p-2 border-b border-slate-200 dark:border-gray-700/20 mb-1">
                     <span className="block text-xs font-black leading-tight text-slate-800 dark:text-slate-100">{user.name}</span>
-                    <span className="block text-[9px] text-[var(--cyan)] leading-tight mt-1 bg-[var(--cyan)]/10 px-2 py-0.5 rounded w-max font-extrabold tracking-wide uppercase">{user.points} XP Points</span>
+                    <span className="block text-[9px] text-[var(--cyan)] leading-tight mt-1 bg-[var(--cyan)]/10 px-2 py-0.5 rounded w-max font-extrabold tracking-wide uppercase">{user.xp} XP Points</span>
                   </div>
 
                   <button
@@ -320,7 +330,7 @@ export default function Navbar({
               </div>
               <div className="text-left">
                 <span className="block font-bold text-xs text-[var(--text-1)]">{user.name}</span>
-                <span className="block text-[9px] text-[var(--cyan)] font-bold uppercase">{user.role} • {user.points} XP</span>
+                <span className="block text-[9px] text-[var(--cyan)] font-bold uppercase">{user.role} • {user.xp} XP</span>
               </div>
             </div>
           )}
@@ -360,7 +370,7 @@ export default function Navbar({
 
           {user && (
             <>
-              {user.role === "Citizen" && (
+              {user.role === ROLES.CITIZEN && (
                 <button
                   onClick={() => { setActiveTab("report"); setMobileMenuOpen(false); }}
                   className={`w-full py-2.5 px-4 rounded-xl text-left font-extrabold text-xs flex items-center gap-2.5 border transition-all ${
@@ -382,9 +392,9 @@ export default function Navbar({
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4 text-[var(--cyan)]" /> 
-                {user.role === "Citizen" && "Citizen Panel"}
-                {user.role === "Authority" && "Staff Terminal"}
-                {user.role === "MunicipalityMgr" && "HQ Executive Desk"}
+                {user.role === ROLES.CITIZEN && "Citizen Panel"}
+                {user.role === ROLES.FIELD_INSPECTOR && "Staff Terminal"}
+                {user.role === ROLES.MUNICIPALITY_HQ && "HQ Executive Desk"}
               </button>
 
               <button

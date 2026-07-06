@@ -10,17 +10,20 @@ import {
   CheckCircle2, 
   X,
   Plus,
-  Navigation
+  Navigation,
+  Star
 } from "lucide-react";
+import { ROLES } from "../constants/roles";
+import { STATUS } from "../constants/status";
 import { Issue, UserProfile } from "../types";
 import InteractiveMap from "./InteractiveMap";
-import { confirmIssue } from "../dbService";
+import { confirmIssue, submitResolutionRating } from "../services/issueService";
 import TelanganaDashboard from "./TelanganaDashboard";
 
+import { useLiveIssues } from "../hooks/useLiveIssues";
+
 interface MapExplorerProps {
-  issues: Issue[];
   user: UserProfile | null;
-  onRefresh: () => void;
 }
 
 // Haversine formula for distance calculation
@@ -38,7 +41,7 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
   return d;
 }
 
-export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProps) {
+export default function MapExplorer({ user }: MapExplorerProps) {
   const [viewMode, setViewMode] = useState<"incidents" | "telangana">("incidents");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -47,25 +50,44 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
   const [selectedZone, setSelectedZone] = useState("All");
   const [filterByNearby, setFilterByNearby] = useState(false);
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+
+  const [rating, setRating] = useState<number>(0);
+  const [ratingFeedback, setRatingFeedback] = useState("");
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
 
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
 
+  const { issues, isSyncing, isOffline, lastSynced } = useLiveIssues({
+    scope: "all",
+    enabled: !!user
+  });
+
   // Filter issues
   const filteredIssues = issues.filter((issue) => {
+    // Legacy data protection: ignore issues without valid coordinates
+    const lat = Number(issue.latitude);
+    const lng = Number(issue.longitude);
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+       return false; 
+    }
+
     // Search matching Title/Description/District
     const matchesSearch = 
-      issue.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      issue.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      issue.address.toLowerCase().includes(searchTerm.toLowerCase());
+      (issue.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (issue.description || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (issue.landmark || "").toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesCategory = selectedCategory === "All" || issue.category === selectedCategory;
-    const matchesStatus = selectedStatus === "All" || issue.status === selectedStatus;
+    const matchesStatus = selectedStatus === "All" || 
+      (selectedStatus === "Open" && [STATUS.SUBMITTED, STATUS.ASSIGNED, STATUS.ACCEPTED].includes(issue.status as any)) ||
+      (selectedStatus === "In Progress" && [STATUS.INSPECTION_STARTED, STATUS.INSPECTION_COMPLETED, STATUS.RECOMMENDED_RESOLUTION, STATUS.RECOMMENDED_REJECTION].includes(issue.status as any)) ||
+      (selectedStatus === "Resolved" && [STATUS.AWAITING_HQ_REVIEW, STATUS.RESOLVED, STATUS.REJECTED].includes(issue.status as any));
     const matchesPriority = selectedPriority === "All" || issue.priority === selectedPriority;
-    const matchesZone = selectedZone === "All" || issue.zone === selectedZone;
+    const matchesZone = selectedZone === "All" || issue.area === selectedZone;
 
     if (filterByNearby && userLocation) {
-        const distance = getDistance(userLocation.lat, userLocation.lng, issue.lat, issue.lng);
+        const distance = getDistance(userLocation.lat, userLocation.lng, issue.latitude, issue.longitude);
         return distance <= 5; // 5km radius
     }
 
@@ -77,12 +99,32 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
       alert("Please log in to confirm and upvote this issue.");
       return;
     }
-    await confirmIssue(issueId, user.id, user.name);
-    onRefresh();
+    try {
+      await confirmIssue(issueId, user.uid, user.name);
+      
+      const updated = issues.find(i => i.uid === issueId || i.complaintId === issueId);
+      if (updated) setSelectedIssue(updated);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-    // Refresh details modal local references
-    const updated = issues.find(i => i.id === issueId);
-    if (updated) setSelectedIssue(updated);
+  const handleRatingSubmit = async () => {
+    if (!user || !selectedIssue || !selectedIssue.uid || rating === 0) return;
+    setIsSubmittingRating(true);
+    try {
+      await submitResolutionRating(selectedIssue.uid, user, rating, ratingFeedback);
+      // Update local state to reflect rating
+      setSelectedIssue({
+        ...selectedIssue,
+        rating,
+        ratingFeedback
+      } as any);
+    } catch (err) {
+      console.error("Failed to submit rating", err);
+    } finally {
+      setIsSubmittingRating(false);
+    }
   };
 
   const toggleNearbyFilter = () => {
@@ -107,11 +149,25 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
       
       {/* Top Toggle Switch */}
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-800/40 pb-4">
-        <div>
-          <h2 className="font-display font-black text-2xl text-[var(--text-1)] tracking-tight">
-            Smart Map Explorer
-          </h2>
-          <p className="text-xs text-gray-500 mt-0.5">Toggle between local community incident maps and state-wide administrative analytics.</p>
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
+              Civic Intelligence Map
+              {isSyncing && (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[10px] text-cyan-400 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  SYNCING
+                </span>
+              )}
+              {isOffline && (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-mono">
+                  <AlertTriangle className="w-3 h-3" />
+                  OFFLINE
+                </span>
+              )}
+            </h1>
+          </div>
+          <p className="text-slate-400 text-sm mt-1">Live semantic clustering of municipal reports and civic issues.</p>
         </div>
 
         <div className="inline-flex p-1 bg-[#080d1e]/80 border border-gray-800/85 rounded-2xl gap-1 shadow-inner self-start sm:self-center">
@@ -224,10 +280,10 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
           ) : (
             filteredIssues.map((issue) => (
               <div
-                key={issue.id}
+                key={issue.complaintId}
                 onClick={() => setSelectedIssue(issue)}
                 className={`p-3 rounded-2xl w-full text-left cursor-pointer border flex flex-col gap-2 transition-colors ${
-                  selectedIssue?.id === issue.id
+                  selectedIssue?.uid === issue.uid
                     ? "border-[var(--cyan)] bg-[var(--cyan)]/[0.02]"
                     : "border-transparent hover:bg-slate-800/50"
                 }`}
@@ -248,9 +304,9 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
                 <div className="text-[10px] text-[var(--text-2)] line-clamp-2 leading-relaxed">"{issue.description}"</div>
 
                 <div className="flex items-center justify-between border-t border-gray-700/10 pt-2 text-[9px] text-gray-500 mt-1">
-                  <span>📍 {issue.address?.split(',').slice(0, 2).join(', ') || issue.zone}</span>
+                  <span>📍 {issue.landmark?.split(',').slice(0, 2).join(', ') || issue.area}</span>
                   <span className="font-bold text-[var(--text-1)] bg-gray-700/20 px-1.5 py-0.5 rounded-md">
-                     👥 {issue.confirmCount} votes
+                     👥 {issue.communitySupportCount} votes
                   </span>
                 </div>
               </div>
@@ -264,7 +320,7 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
       <div className="lg:col-span-8 relative flex flex-col gap-4 h-full">
         <InteractiveMap 
           issues={filteredIssues}
-          selectedIssueId={selectedIssue?.id}
+          selectedIssueId={selectedIssue?.complaintId}
           onSelectIssue={(issue) => setSelectedIssue(issue)}
           height="100%"
           center={[16.5062, 80.6480]}
@@ -285,39 +341,119 @@ export default function MapExplorer({ issues, user, onRefresh }: MapExplorerProp
                 <span className="text-[10px] font-bold font-mono uppercase bg-[var(--cyan)]/10 text-[var(--cyan)] px-2 py-0.5 rounded-md">
                   {selectedIssue.category}
                 </span>
-                <span className="text-[10px] text-gray-500 font-mono">Reference: #{selectedIssue.id.split("_").pop()}</span>
+                <span className="text-[10px] text-gray-500 font-mono">Reference: #{selectedIssue.uid?.split("_").pop()}</span>
               </div>
               <h4 className="font-bold text-sm text-[var(--text-1)] mt-1.5">{selectedIssue.title}</h4>
               <p className="text-[11px] text-[var(--text-2)] mt-0.5 leading-relaxed line-clamp-2">"{selectedIssue.description}"</p>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] font-mono text-gray-500 border-y border-gray-700/10 py-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px] font-mono text-gray-500 border-y border-gray-700/10 py-3">
               <div>
-                <span>ZONE:</span> <strong className="text-[var(--text-1)] block font-sans">{selectedIssue.zone}</strong>
+                <span className="block mb-0.5">LANDMARK:</span> <strong className="text-[var(--text-1)] block font-sans">{selectedIssue.landmark || "Not provided"}</strong>
               </div>
               <div>
-                <span>COORDINATES:</span> <strong className="text-[var(--text-1)] block">{selectedIssue.lat.toFixed(4)}, {selectedIssue.lng.toFixed(4)}</strong>
+                <span className="block mb-0.5">AREA:</span> <strong className="text-[var(--text-1)] block font-sans">{selectedIssue.area || "Not provided"}</strong>
               </div>
               <div>
-                <span>STATUS:</span> <strong className="text-[var(--text-1)] block font-sans capitalize">{selectedIssue.status}</strong>
+                <span className="block mb-0.5">ULB:</span> <strong className="text-[var(--text-1)] block font-sans">{selectedIssue.ulb || "Not provided"}</strong>
               </div>
               <div>
-                <span>UPVOTES:</span> <strong className="text-[var(--text-1)] block">{selectedIssue.confirmCount} confirmations</strong>
+                <span className="block mb-0.5">DISTRICT:</span> <strong className="text-[var(--text-1)] block font-sans">{selectedIssue.district || "Not provided"}</strong>
+              </div>
+              <div>
+                <span className="block mb-0.5">STATE:</span> <strong className="text-[var(--text-1)] block font-sans">{selectedIssue.state || "Not provided"}</strong>
+              </div>
+              <div>
+                <span className="block mb-0.5">STATUS:</span> <strong className="text-[var(--text-1)] block font-sans capitalize">{selectedIssue.status || "Not provided"}</strong>
+              </div>
+              <div>
+                <span className="block mb-0.5">SUPPORT:</span> <strong className="text-[var(--text-1)] block font-sans">{selectedIssue.communitySupportCount ?? "Not provided"} Confirmations</strong>
+              </div>
+              <div>
+                <span className="block mb-0.5">COORDINATES:</span> <strong className="text-gray-600 block text-[9px]">{selectedIssue.latitude?.toFixed(4) ?? "Not provided"}, {selectedIssue.longitude?.toFixed(4) ?? "Not provided"}</strong>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              {user && user.role === "Citizen" && !selectedIssue.confirmations.some(c => c.userId === user.id) ? (
+            {/* Inspection Notes Block (if available) */}
+            {(selectedIssue.workCompleted || selectedIssue.materialsUsed || selectedIssue.estimatedCost || selectedIssue.timeSpent || selectedIssue.inspectionRemarks) && (
+              <div className="mt-3 bg-gray-500/5 border border-gray-700/10 rounded-xl p-3 text-left">
+                <span className="text-[9px] uppercase font-bold text-[var(--cyan)] font-mono flex items-center gap-1.5 mb-2">
+                  📋 Public Resolution Summary
+                </span>
+                
+                {(() => {
+                  const isOwner = user?.uid === selectedIssue.reportedByUID;
+                  const isResolved = [STATUS.INSPECTION_COMPLETED, STATUS.RECOMMENDED_RESOLUTION, STATUS.AWAITING_HQ_REVIEW, STATUS.RESOLVED, STATUS.REJECTED].includes(selectedIssue.status as any);
+                  const canSeeFullNotes = isOwner && isResolved;
+
+                  if (canSeeFullNotes) {
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 gap-2 text-[10px]">
+                          {selectedIssue.workCompleted && (
+                            <div><span className="text-gray-500 block">Work Completed</span><strong className="text-[var(--text-1)]">{selectedIssue.workCompleted}</strong></div>
+                          )}
+                          {selectedIssue.materialsUsed && (
+                            <div><span className="text-gray-500 block">Materials Used</span><strong className="text-[var(--text-1)]">{selectedIssue.materialsUsed}</strong></div>
+                          )}
+                          {selectedIssue.estimatedCost && (
+                            <div><span className="text-gray-500 block">Cost</span><strong className="text-[var(--text-1)]">₹{selectedIssue.estimatedCost}</strong></div>
+                          )}
+                          {selectedIssue.timeSpent && (
+                            <div><span className="text-gray-500 block">Time Spent</span><strong className="text-[var(--text-1)]">{selectedIssue.timeSpent}</strong></div>
+                          )}
+                        </div>
+                        {selectedIssue.inspectionRemarks && (
+                          <div className="mt-2 pt-1 border-t border-gray-700/10">
+                            <span className="text-gray-500 block text-[9px]">Remarks</span>
+                            <p className="text-[10px] text-[var(--text-1)] leading-snug">{selectedIssue.inspectionRemarks}</p>
+                          </div>
+                        )}
+                      </>
+                    );
+                  } else {
+                    return (
+                      <div className="text-[10px]">
+                        {selectedIssue.workCompleted ? (
+                          <div className="mb-1"><strong className="text-[var(--text-1)]">{selectedIssue.workCompleted}</strong></div>
+                        ) : (
+                          <div className="text-gray-500 italic">Resolution in progress...</div>
+                        )}
+                      </div>
+                    );
+                  }
+                })()}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2.5 mt-3">
+              {/* Static Rating Display in Map Explorer */}
+              {selectedIssue.rating && (
+                <div className="bg-gray-500/10 p-3 rounded-xl border border-gray-700/30">
+                  <span className="text-[10px] text-gray-400 block mb-1">
+                    {user && selectedIssue.reportedByUID === user.uid 
+                      ? "You rated this complaint:" 
+                      : "Citizen Resolution Rating:"}
+                  </span>
+                  <div className="flex gap-1 mb-1">
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <Star key={star} className={`w-4 h-4 ${star <= (selectedIssue.rating || 0) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-600'}`} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {user && user.role === ROLES.CITIZEN && !(selectedIssue as any).confirmations?.some((c: any) => c.userId === user.uid) ? (
                 <button
                   type="button"
-                  onClick={() => handleConfirmAction(selectedIssue.id)}
+                  onClick={() => handleConfirmAction(selectedIssue.uid!)}
                   className="px-4 py-2 bg-[var(--cyan)] text-slate-950 font-bold rounded-xl text-[10px] hover:scale-102 transition-transform cursor-pointer"
                 >
                   👍 Confirm / Upvote Issue
                 </button>
-              ) : selectedIssue.confirmations.some(c => c.userId === (user?.id || "")) ? (
+              ) : (selectedIssue as any).confirmations?.some((c: any) => c.userId === (user?.uid || "")) ? (
                 <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-xl border border-indigo-500/10 flex items-center gap-1">
-                  <CheckCircle className="w-3.5 h-3.5" /> Upvote Casted Successfully
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Upvote Casted Successfully
                 </span>
               ) : (
                 <span className="text-[10px] text-gray-500 italic">Login as Citizen to Upvote alerts</span>

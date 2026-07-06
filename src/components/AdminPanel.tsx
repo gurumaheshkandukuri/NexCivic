@@ -15,34 +15,60 @@ import {
   Brain,
   MessageSquare,
   Activity,
-  Plus
+  Plus,
+  UploadCloud,
+  CheckCircle,
+  Star
 } from "lucide-react";
 import { Issue, UserProfile, ImportBatch } from "../types";
 import { 
   updateIssueStatus, 
   mergeIssues, 
+  createIssue,
+  acceptCase,
+  startInspection,
+  completeInspection,
+  submitRecommendation,
+  uploadInspectionImage
+} from "../services/issueService";
+import { 
   getImportBatches, 
   createImportBatch, 
-  deleteImportBatchCascade,
-  createIssue
-} from "../dbService";
+  deleteImportBatchCascade
+} from "../services/adminService";
+import { generateResolutionCertificate } from "../utils/pdfGenerator";
+import { generateInspectorAnalytics } from "../utils/analytics/inspectorAnalytics";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
+import { STATUS } from "../constants/status";
+
+import { useLiveIssues } from "../hooks/useLiveIssues";
+import { useLiveAnalytics } from "../hooks/useLiveAnalytics";
 
 interface AdminPanelProps {
   user: UserProfile;
-  issues: Issue[];
-  onRefresh: () => void;
 }
 
-export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps) {
+export default function AdminPanel({ user }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "reports" | "imports" | "duplicates">("overview");
 
   // State handles for reports updates
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [statusInput, setStatusInput] = useState<"Open" | "In Progress" | "Resolved">("In Progress");
   const [notes, setNotes] = useState("");
+  const [workCompleted, setWorkCompleted] = useState("");
+  const [materialsUsed, setMaterialsUsed] = useState("");
+  const [estimatedCost, setEstimatedCost] = useState("");
+  const [timeSpent, setTimeSpent] = useState("");
   const [afterPhoto, setAfterPhoto] = useState("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  const [beforeFiles, setBeforeFiles] = useState<File[]>([]);
+  const [afterFiles, setAfterFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadStatusText, setUploadStatusText] = useState<string>("");
+  const [recommendation, setRecommendation] = useState<"RESOLVE" | "REJECT">("RESOLVE");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [reporterEmail, setReporterEmail] = useState<string | null>(null);
 
   // State handles for CSV import
   const [csvRaw, setCsvRaw] = useState("");
@@ -60,22 +86,46 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
     loadBatches();
   }, []);
 
+  useEffect(() => {
+    if (selectedIssue && selectedIssue.reportedByUID && selectedIssue.reportedByUID !== "anonymous") {
+      setReporterEmail(null);
+      import("firebase/firestore").then(({ doc, getDoc }) => {
+        import("../firebase-init").then(({ db }) => {
+          getDoc(doc(db, "users", selectedIssue.reportedByUID)).then((snap) => {
+            if (snap.exists()) {
+              setReporterEmail(snap.data().email || null);
+            }
+          }).catch(() => setReporterEmail(null));
+        });
+      });
+    } else {
+      setReporterEmail(null);
+    }
+  }, [selectedIssue]);
+
   const loadBatches = async () => {
     const list = await getImportBatches();
     setImportBatchesList(list);
   };
 
   // Recharts metric calculations
-  const openCount = issues.filter(i => i.status === "Open").length;
-  const inProgressCount = issues.filter(i => i.status === "In Progress").length;
-  const resolvedCount = issues.filter(i => i.status === "Resolved").length;
+  const { issues, isSyncing, isOffline, lastSynced } = useLiveIssues({
+    scope: "inspector",
+    userId: user.uid
+  });
 
+  const analytics = useLiveAnalytics(user, issues);
+  
+  if (!analytics) return null;
+  const { summary, charts, metadata } = analytics;
+  
+  // Keep legacy priority and category charts for Inspector if not ported to new charts object
   const priorityData = [
     { name: "Critical", value: issues.filter(i => i.priority === "Critical").length, color: "var(--red)" },
     { name: "High", value: issues.filter(i => i.priority === "High").length, color: "var(--orange)" },
     { name: "Medium", value: issues.filter(i => i.priority === "Medium").length, color: "var(--yellow)" },
     { name: "Low", value: issues.filter(i => i.priority === "Low").length, color: "var(--green)" }
-  ];
+  ].filter(p => p.value > 0);
 
   const categoryData = [
     { category: "Pothole", count: issues.filter(i => i.category === "Pothole").length },
@@ -84,7 +134,7 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
     { category: "Lights", count: issues.filter(i => i.category === "Street Light").length },
     { category: "Drainage", count: issues.filter(i => i.category === "Drainage").length },
     { category: "Infras.", count: issues.filter(i => i.category === "Infrastructure").length }
-  ];
+  ].filter(c => c.count > 0);
 
   // CSV Drag/Drop Parse Handlers
   const handleCSVDragOver = (e: React.DragOverEvent) => {
@@ -198,14 +248,16 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
           description,
           category,
           priority,
-          address,
-          lat,
-          lng,
-          zone: user.zone === "All Zones" || !user.zone ? "Zone A" : user.zone,
-          status: "Open",
-          reportedBy: user.id,
-          reporterName: user.name,
-          reporterEmail: user.email,
+          landmark: address,
+          latitude: lat,
+          longitude: lng,
+          state: user.assignedState || "Delhi",
+          district: user.assignedDistrict || "Central",
+          ulb: user.assignedULBs?.[0] || "NDMC",
+          status: "Submitted",
+          reportedByUID: user.uid,
+          reportedByName: user.name,
+           
           source: "csv_import",
           importBatch: batchId,
         });
@@ -217,7 +269,6 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
       setParsedRows([]);
       setParsedHeaders([]);
       loadBatches();
-      onRefresh();
       
       // Clear status with a slight delay
       setTimeout(() => {
@@ -236,7 +287,7 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
       const res = await fetch("/api/gemini/scan-duplicates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issues: issues.map(i => ({ id: i.id, title: i.title, description: i.description, lat: i.lat, lng: i.lng })) })
+        body: JSON.stringify({ issues: issues.map(i => ({ id: i.uid, title: i.title, description: i.description, lat: i.latitude, lng: i.longitude })) })
       });
       const data = await res.json();
       setDuplicateScanResults(data.duplicates || []);
@@ -251,7 +302,7 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
     e.preventDefault();
     if (!selectedIssue) return;
 
-    const issueId = selectedIssue.id;
+    const issueId = selectedIssue.uid!;
 
     await updateIssueStatus(issueId, statusInput, {
       afterPhotoUrl: afterPhoto || undefined,
@@ -268,21 +319,165 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
     setSelectedIssue(null);
     setNotes("");
     setAfterPhoto("");
-    onRefresh();
+  };
+
+  const handleAccept = async () => {
+    if (!selectedIssue) return;
+    setIsSubmitting(true);
+    try {
+      await acceptCase(selectedIssue.uid!, user);
+      setSelectedIssue(null);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to accept case.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleStart = async () => {
+    if (!selectedIssue) return;
+    setIsSubmitting(true);
+    try {
+      await startInspection(selectedIssue.uid!, user, selectedIssue.complaintId, selectedIssue.reportedByUID);
+      setSelectedIssue(null);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to start inspection.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleComplete = async () => {
+    if (!selectedIssue) return;
+    if (!notes.trim()) {
+      alert("Remarks are required to complete inspection.");
+      return;
+    }
+    setIsSubmitting(true);
+    setUploadProgress(0);
+    try {
+      const totalFiles = beforeFiles.length + afterFiles.length;
+      let completedFiles = 0;
+
+      const uploadWithProgress = (f: File, type: 'before' | 'after') => {
+        return uploadInspectionImage(f, selectedIssue.complaintId, type, (prog) => {
+          const overall = totalFiles > 0 ? ((completedFiles * 100) + prog) / totalFiles : 100;
+          setUploadProgress(Math.round(overall));
+          setUploadStatusText(`Uploading ${type} image ${completedFiles + 1} of ${totalFiles}... ${Math.round(prog)}%`);
+        }).then(url => {
+          completedFiles++;
+          return url;
+        });
+      };
+
+      setUploadStatusText(beforeFiles.length > 0 ? "Uploading before images..." : "Preparing...");
+      const bUrls: string[] = [];
+      for (const f of beforeFiles) {
+        bUrls.push(await uploadWithProgress(f, 'before'));
+      }
+
+      if (afterFiles.length > 0) setUploadStatusText("Uploading after images...");
+      const aUrls: string[] = [];
+      for (const f of afterFiles) {
+        aUrls.push(await uploadWithProgress(f, 'after'));
+      }
+
+      setUploadStatusText("Updating case details...");
+      
+      const notesPayload = {
+        workCompleted,
+        materialsUsed,
+        estimatedCost,
+        timeSpent,
+        remarks: notes
+      };
+      
+      await completeInspection(selectedIssue.uid!, user, selectedIssue.complaintId, selectedIssue.reportedByUID, bUrls, aUrls, notesPayload);
+      
+      setBeforeFiles([]);
+      setAfterFiles([]);
+      setNotes("");
+      setWorkCompleted("");
+      setMaterialsUsed("");
+      setEstimatedCost("");
+      setTimeSpent("");
+      setUploadProgress(0);
+      setUploadStatusText("");
+      setSelectedIssue(null);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to complete inspection.");
+    } finally {
+      setIsSubmitting(false);
+      setUploadProgress(0);
+      setUploadStatusText("");
+    }
+  };
+
+  const handleRecommend = async () => {
+    if (!selectedIssue) return;
+    if (!notes.trim()) {
+      alert("Recommendation remarks are required.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await submitRecommendation(selectedIssue.uid!, user, recommendation, notes);
+      setNotes("");
+      setSelectedIssue(null);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to submit recommendation.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'before' | 'after') => {
+    const files = Array.from(e.target.files || []) as File[];
+    if (files.length > 5) {
+      alert("Maximum 5 files allowed.");
+      return;
+    }
+    const validFiles = files.filter(f => {
+      if (f.size > 5 * 1024 * 1024) {
+        alert(`${f.name} exceeds 5MB limit.`);
+        return false;
+      }
+      if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(f.type)) {
+        alert(`${f.name} format not supported. Use JPG, PNG, or WEBP.`);
+        return false;
+      }
+      return true;
+    });
+    
+    if (type === 'before') {
+      setBeforeFiles(prev => [...prev, ...validFiles].slice(0, 5));
+    } else {
+      setAfterFiles(prev => [...prev, ...validFiles].slice(0, 5));
+    }
+  };
+
+  const removeFile = (index: number, type: 'before' | 'after') => {
+    if (type === 'before') {
+      setBeforeFiles(prev => prev.filter((_, i) => i !== index));
+    } else {
+      setAfterFiles(prev => prev.filter((_, i) => i !== index));
+    }
   };
 
   const handleDeleteBatch = async (batchId: string, type: "issues" | "survey") => {
     if (confirm("WARNING: Proceeding will trace and delete all associated dataset rows imported in this batch. Delete anyway?")) {
       await deleteImportBatchCascade(batchId, type);
       loadBatches();
-      onRefresh();
     }
   };
 
   // Execute manual merge
   const handleMergeAction = async (primaryId: string, duplicateId: string) => {
-    await mergeIssues(primaryId, [duplicateId], user.id);
-    onRefresh();
+    await mergeIssues(primaryId, [duplicateId], user.uid);
   };
 
   return (
@@ -307,70 +502,140 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
       </div>
 
       {activeTab === "overview" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Main numeric counters */}
-          <div className="lg:col-span-8 flex flex-col gap-6">
-            <div className="grid grid-cols-3 gap-4">
-              <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-left">
-                <span className="text-[10px] uppercase text-amber-500 font-bold block">Open Incident Backlog</span>
-                <span className="text-3xl font-display font-black text-amber-400 block mt-1">{openCount}</span>
-              </div>
-              <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10 text-left">
-                <span className="text-[10px] uppercase text-blue-500 font-bold block">In Field Diagnostics</span>
-                <span className="text-3xl font-display font-black text-blue-400 block mt-1">{inProgressCount}</span>
-              </div>
-              <div className="p-4 rounded-2xl bg-green-500/5 border border-green-500/10 text-left">
-                <span className="text-[10px] uppercase text-green-500 font-bold block">Certified Resolved</span>
-                <span className="text-3xl font-display font-black text-[var(--green)] block mt-1">{resolvedCount}</span>
-              </div>
+        <div className="flex flex-col gap-6">
+          <div className="flex-1">
+          <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
+            Inspector Terminal
+            {isSyncing && (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[10px] text-cyan-400 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                SYNCING
+              </span>
+            )}
+            {isOffline && (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-mono">
+                <AlertTriangle className="w-3 h-3" />
+                OFFLINE
+              </span>
+            )}
+          </h1>
+          <p className="text-slate-400 text-sm mt-1 max-w-xl">
+            Field execution interface for managing assigned civic reports and dispatch tracking.
+          </p>
+        </div>
+          <div className="flex justify-end mb-2 -mt-4">
+            <span className="text-[10px] text-gray-400 font-mono">Last Updated: Just now</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">Submitted</span>
+              <span className="text-2xl font-black text-indigo-400 block mt-1">{summary.assigned}</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">In Progress</span>
+              <span className="text-2xl font-black text-amber-400 block mt-1">{summary.accepted}</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-green-500/5 border border-green-500/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">Completed</span>
+              <span className="text-2xl font-black text-emerald-400 block mt-1">{summary.completed}</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-[var(--cyan)]/5 border border-[var(--cyan)]/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block flex justify-between">
+                Success Rate <span className={summary.performanceTrend.includes("↑") ? "text-emerald-400" : summary.performanceTrend.includes("↓") ? "text-rose-400" : "text-gray-400"}>{summary.performanceTrend}</span>
+              </span>
+              <span className="text-2xl font-black text-white block mt-1">{summary.resolutionSuccessRate === "Insufficient Data" ? <span className="text-xs text-gray-500 font-normal">Insufficient Data</span> : `${summary.resolutionSuccessRate}%`}</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">Avg Completion</span>
+              <span className="text-2xl font-black text-white block mt-1">{summary.averageCompletionTimeDays === "Insufficient Data" ? <span className="text-xs text-gray-500 font-normal">Insufficient Data</span> : `${summary.averageCompletionTimeDays}d`}</span>
             </div>
 
-            {/* Recharts chart block category distribution */}
-            <div className="glass p-5 rounded-3xl border border-gray-700/10 h-64 shadow-xl">
-              <span className="font-display font-bold text-xs uppercase text-[var(--text-2)] mb-3 block">
-                Incidents Distributed by category
-              </span>
-              <ResponsiveContainer width="100%" height="85%">
-                <BarChart data={categoryData}>
-                  <XAxis dataKey="category" stroke="#6b7280" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#6b7280" fontSize={10} tickLine={false} />
-                  <Tooltip contentStyle={{ background: "rgba(10,17,40,0.9)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px" }} />
-                  <Bar dataKey="count" fill="var(--cyan)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="p-4 rounded-2xl bg-orange-500/5 border border-orange-500/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">Avg Inspection</span>
+              <span className="text-2xl font-black text-orange-400 block mt-1">{summary.averageInspectionDurationHours === "Insufficient Data" ? <span className="text-xs text-gray-500 font-normal">Insufficient Data</span> : `${summary.averageInspectionDurationHours}h`}</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-yellow-500/5 border border-yellow-500/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">Citizen Rating</span>
+              <div className="flex items-center gap-1 mt-1">
+                <span className="text-2xl font-black text-yellow-400">{summary.averageCitizenRating === "Insufficient Data" ? <span className="text-xs text-gray-500 font-normal">Insufficient Data</span> : summary.averageCitizenRating}</span>
+                {summary.averageCitizenRating !== "Insufficient Data" ? <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" /> : null}
+              </div>
+            </div>
+            <div className="p-4 rounded-2xl bg-[var(--cyan)]/5 border border-[var(--cyan)]/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">This Week</span>
+              <span className="text-2xl font-black text-cyan-400 block mt-1">{summary.casesThisWeek}</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">This Month</span>
+              <span className="text-2xl font-black text-blue-400 block mt-1">{summary.casesThisMonth}</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/10 text-left flex flex-col justify-between">
+              <span className="text-[10px] uppercase text-gray-400 font-bold block">Longest Pending</span>
+              <span className="text-2xl font-black text-red-400 block mt-1">{summary.longestPendingCaseDays ? `${summary.longestPendingCaseDays}d` : '0d'}</span>
             </div>
           </div>
 
-          {/* Right priority distribution pie */}
-          <div className="lg:col-span-4 glass p-5 rounded-3xl border border-gray-700/10 flex flex-col gap-4 shadow-xl justify-between">
-            <div>
-              <span className="font-display font-bold text-xs uppercase text-[var(--text-2)] mb-2 block">
-                Incidents split by severity
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-8 glass p-5 rounded-3xl border border-gray-700/10 h-64 shadow-xl">
+              <span className="font-display font-bold text-xs uppercase text-[var(--text-2)] mb-3 block">
+                Incidents Distributed by category
               </span>
-              <div className="h-44 flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={priorityData} innerRadius={45} outerRadius={60} paddingAngle={3} dataKey="value">
-                      {priorityData.map((entry, idx) => (
-                        <Cell key={`cell-${idx}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
+              {categoryData.length === 0 ? (
+                <div className="h-[75%] flex items-center justify-center text-gray-500 text-sm">
+                  No analytics available yet.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={190}>
+                  <BarChart data={categoryData}>
+                    <XAxis dataKey="category" stroke="#6b7280" fontSize={10} tickLine={false} />
+                    <YAxis stroke="#6b7280" fontSize={10} tickLine={false} />
+                    <Tooltip contentStyle={{ background: "rgba(10,17,40,0.9)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px" }} />
+                    <Bar dataKey="count" fill="var(--cyan)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
-              </div>
+              )}
             </div>
 
-            <div className="flex flex-col gap-1.5 text-[11px] font-mono leading-none">
-              {priorityData.map((d) => (
-                <div key={d.name} className="flex justify-between items-center bg-gray-500/5 p-2 rounded-lg">
-                  <span className="flex items-center gap-1.5 text-gray-400">
-                    <span className="w-2 h-2 rounded-full" style={{ background: d.color }} />
-                    {d.name.toUpperCase()}
-                  </span>
-                  <span className="font-bold text-[var(--text-1)]">{d.value}</span>
+            <div className="lg:col-span-4 glass p-5 rounded-3xl border border-gray-700/10 flex flex-col gap-4 shadow-xl justify-between">
+              <div>
+                <span className="font-display font-bold text-xs uppercase text-[var(--text-2)] mb-2 block">
+                  Incidents split by severity
+                </span>
+                {priorityData.length === 0 ? (
+                  <div className="h-44 flex flex-col items-center justify-center text-gray-500 text-sm">
+                    No analytics available yet.
+                  </div>
+                ) : (
+                  <>
+                    <div className="h-44 flex items-center justify-center">
+                      <ResponsiveContainer width="100%" height={170}>
+                        <PieChart>
+                          <Pie data={priorityData} innerRadius={45} outerRadius={60} paddingAngle={3} dataKey="value">
+                            {priorityData.map((entry, idx) => (
+                              <Cell key={`cell-${idx}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {priorityData.length > 0 && (
+                <div className="flex flex-col gap-1.5 text-[11px] font-mono leading-none">
+                  {priorityData.map((d) => (
+                    <div key={d.name} className="flex justify-between items-center bg-gray-500/5 p-2 rounded-lg">
+                      <span className="flex items-center gap-1.5 text-gray-400">
+                        <span className="w-2 h-2 rounded-full" style={{ background: d.color }} />
+                        {d.name.toUpperCase()}
+                      </span>
+                      <span className="font-bold text-[var(--text-1)]">{d.value}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>
@@ -396,10 +661,10 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
               </thead>
               <tbody>
                 {issues.map((issue) => {
-                  const isHighlighted = highlightedId === issue.id;
+                  const isHighlighted = highlightedId === issue.uid;
                   return (
                     <tr 
-                      key={issue.id} 
+                      key={issue.uid} 
                       className={`border-b border-gray-700/10 hover:bg-[rgba(255,255,255,0.01)] transition-all duration-1000 ${
                         isHighlighted 
                           ? "bg-[var(--cyan)]/15 border-[var(--cyan)] shadow-[0_0_20px_rgba(0,229,255,0.15)] border-l-4 border-l-[var(--cyan)] pl-2" 
@@ -408,14 +673,14 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
                     >
                       <td className="py-3 text-[var(--text-1)] font-bold max-w-[200px] truncate">
                         <div>{issue.title}</div>
-                        {issue.suggestedDepartment && (
+                        {issue.category && (
                           <span className="text-[8px] font-mono font-bold text-purple-400 bg-purple-500/5 px-1 py-0.5 rounded border border-purple-500/10 mt-0.5 inline-block">
-                            {issue.suggestedDepartment}
+                            {issue.category}
                           </span>
                         )}
                       </td>
-                      <td className="py-3 text-[var(--text-2)]">{issue.zone}</td>
-                      <td className="py-3 text-gray-500">{issue.reporterName}</td>
+                      <td className="py-3 text-[var(--text-2)]">{issue.area || issue.ulb || "N/A"}</td>
+                      <td className="py-3 text-gray-500">{issue.reportedByName || "Anonymous"}</td>
                       <td className="py-3">
                         <span className={`px-2 py-0.5 rounded text-[8px] font-bold ${
                           issue.priority === "Critical" ? "bg-[var(--red)]/10 text-[var(--red)]" 
@@ -427,8 +692,8 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
                       </td>
                       <td className="py-3">
                         <span className={`px-2 py-1 rounded text-[9px] font-extrabold border ${
-                          issue.status === "In Progress" ? "bg-[var(--blue)]/5 border-[var(--blue)]/20 text-[var(--blue)]"
-                          : issue.status === "Resolved" ? "bg-[var(--green)]/5 border-[var(--green)]/20 text-[var(--green)]"
+                          [STATUS.INSPECTION_STARTED, STATUS.RECOMMENDED_RESOLUTION, STATUS.RECOMMENDED_REJECTION, STATUS.AWAITING_HQ_REVIEW].includes(issue.status) ? "bg-[var(--blue)]/5 border-[var(--blue)]/20 text-[var(--blue)]"
+                          : [STATUS.RESOLVED, STATUS.INSPECTION_COMPLETED].includes(issue.status) ? "bg-[var(--green)]/5 border-[var(--green)]/20 text-[var(--green)]"
                           : "bg-gray-500/5 border-gray-700/20 text-[var(--text-2)]"
                         }`}>{issue.status}</span>
                       </td>
@@ -436,9 +701,9 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
                         <button
                           onClick={() => {
                             setSelectedIssue(issue);
-                            setStatusInput(issue.status);
-                            setNotes(issue.resolutionNotes || "");
-                            setAfterPhoto(issue.afterPhotoUrl || "");
+                            setStatusInput(issue.status as any);
+                            setNotes(issue.recommendationRemarks || "");
+                            setAfterPhoto(issue.resolutionImages?.[0] || "");
                           }}
                           className="p-1 px-3 bg-[var(--cyan)] hover:scale-103 transition-transform text-slate-950 rounded-lg font-bold cursor-pointer text-[10px]"
                         >
@@ -637,8 +902,8 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
 
       {/* INSPECT ACTION STATUS DIALOG */}
       {selectedIssue && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="glass max-w-4xl w-full rounded-3xl p-6 md:p-8 border border-slate-200/50 dark:border-white/10 flex flex-col gap-6 text-left relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100] overflow-hidden">
+          <div className="glass max-w-4xl w-full rounded-3xl p-6 md:p-8 border border-slate-200/50 dark:border-white/10 flex flex-col gap-6 text-left relative max-h-[90vh] overflow-hidden">
             <button
               type="button"
               onClick={() => setSelectedIssue(null)}
@@ -652,31 +917,25 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
               <span className="text-[10px] uppercase font-bold tracking-widest text-[var(--cyan)] font-mono flex items-center gap-2 flex-wrap">
                 <span>{selectedIssue.category || "General Incident"}</span>
                 <span>•</span>
-                <span>Reference: #{selectedIssue.id.split("_").pop()}</span>
-                {selectedIssue.suggestedDepartment && (
-                  <>
-                    <span>•</span>
-                    <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 font-bold uppercase text-[8px] border border-purple-500/20">Routed: {selectedIssue.suggestedDepartment}</span>
-                  </>
-                )}
+                <span>Reference: {selectedIssue.complaintId}</span>
               </span>
               <h3 className="font-display font-extrabold text-xl md:text-2xl text-[var(--text-1)] mt-1">
                 {selectedIssue.title}
               </h3>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start overflow-y-auto">
               {/* Left Column: Full Report Information */}
-              <div className="lg:col-span-7 flex flex-col gap-5">
+              <div className="lg:col-span-7 flex flex-col gap-5 lg:pr-2 pb-4">
                 {/* Image Section */}
                 <div className="flex flex-col gap-2">
                   <span className="text-[10px] uppercase font-bold text-gray-500 font-mono tracking-wider flex items-center gap-1.5">
                     🖼️ Original Report Photograph
                   </span>
                   <div className="relative h-56 w-full rounded-2xl border border-gray-750 bg-gray-950/40 overflow-hidden flex items-center justify-center shadow-inner">
-                    {selectedIssue.imageUrl || selectedIssue.beforePhotoUrl ? (
+                    {selectedIssue.inspectionImages && selectedIssue.inspectionImages.length > 0 ? (
                       <img 
-                        src={selectedIssue.imageUrl || selectedIssue.beforePhotoUrl} 
+                        src={selectedIssue.inspectionImages[0]} 
                         referrerPolicy="no-referrer" 
                         alt={selectedIssue.title} 
                         className="w-full h-full object-cover" 
@@ -708,11 +967,13 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
                     <div className="text-xs flex flex-col gap-1 mt-1">
                       <div>
                         <span className="text-gray-500 text-[10px] block font-sans">NAME</span>
-                        <strong className="text-[var(--text-1)]">{selectedIssue.reporterName || "Anonymous Resident"}</strong>
+                        <strong className="text-[var(--text-1)]">{selectedIssue.reportedByName || "Anonymous Resident"}</strong>
                       </div>
                       <div className="mt-1">
                         <span className="text-gray-500 text-[10px] block font-sans">EMAIL</span>
-                        <strong className="text-[var(--text-2)] break-all">{selectedIssue.reporterEmail || "not-disclosed@gmail.com"}</strong>
+                        <strong className="text-[var(--text-2)] break-all">
+                          {reporterEmail || (selectedIssue.reportedByUID === "anonymous" ? "Anonymous" : "Fetching...")}
+                        </strong>
                       </div>
                     </div>
                   </div>
@@ -769,18 +1030,79 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1 text-xs text-left">
                     <div>
                       <span className="text-gray-500 text-[10px] block font-sans">WARD / ZONE</span>
-                      <strong className="text-[var(--text-1)]">{selectedIssue.zone || "Zone A"}</strong>
+                      <strong className="text-[var(--text-1)]">{selectedIssue.area || selectedIssue.ulb || "N/A"}</strong>
                     </div>
                     <div>
                       <span className="text-gray-500 text-[10px] block font-sans">COORDINATES</span>
-                      <strong className="text-[var(--text-2)] font-mono">{selectedIssue.lat?.toFixed(6) ?? "19.119700"}, {selectedIssue.lng?.toFixed(6) ?? "72.846800"}</strong>
+                      <strong className="text-[var(--text-2)] font-mono">{selectedIssue.latitude?.toFixed(6) ?? "19.119700"}, {selectedIssue.longitude?.toFixed(6) ?? "72.846800"}</strong>
                     </div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-gray-700/10 text-left">
                     <span className="text-gray-500 text-[10px] block font-sans">PROVIDED ADDRESS</span>
-                    <strong className="text-[var(--text-1)] text-[11px] block mt-0.5 leading-snug">{selectedIssue.address || "No strict address provided."}</strong>
+                    <strong className="text-[var(--text-1)] text-[11px] block mt-0.5 leading-snug">{selectedIssue.landmark || "No strict address provided."}</strong>
                   </div>
                 </div>
+
+                {/* Inspection Notes Block (only show if available) */}
+                {(selectedIssue.workCompleted || selectedIssue.materialsUsed || selectedIssue.estimatedCost || selectedIssue.timeSpent || selectedIssue.inspectionRemarks) && (
+                  <div className="flex flex-col gap-2 p-4 bg-gray-500/5 rounded-2xl border border-gray-700/10 text-left mt-1">
+                    <span className="text-[10px] uppercase font-bold text-gray-400 font-mono flex items-center gap-1.5 border-b border-gray-750 pb-2 mb-1">
+                      📋 Inspection Notes
+                    </span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs mt-1">
+                      {selectedIssue.workCompleted && (
+                        <div>
+                          <span className="text-gray-500 text-[10px] block font-sans">WORK COMPLETED</span>
+                          <strong className="text-[var(--text-1)]">{selectedIssue.workCompleted}</strong>
+                        </div>
+                      )}
+                      {selectedIssue.materialsUsed && (
+                        <div>
+                          <span className="text-gray-500 text-[10px] block font-sans">MATERIALS USED</span>
+                          <strong className="text-[var(--text-1)]">{selectedIssue.materialsUsed}</strong>
+                        </div>
+                      )}
+                      {selectedIssue.estimatedCost && (
+                        <div>
+                          <span className="text-gray-500 text-[10px] block font-sans">ESTIMATED COST</span>
+                          <strong className="text-[var(--text-1)]">₹{selectedIssue.estimatedCost}</strong>
+                        </div>
+                      )}
+                      {selectedIssue.timeSpent && (
+                        <div>
+                          <span className="text-gray-500 text-[10px] block font-sans">TIME SPENT</span>
+                          <strong className="text-[var(--text-1)]">{selectedIssue.timeSpent}</strong>
+                        </div>
+                      )}
+                    </div>
+                    {selectedIssue.inspectionRemarks && (
+                      <div className="mt-2 pt-2 border-t border-gray-700/10 text-left">
+                        <span className="text-gray-500 text-[10px] block font-sans">REMARKS</span>
+                        <strong className="text-[var(--text-1)] text-[11px] block mt-0.5 leading-snug">{selectedIssue.inspectionRemarks}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Citizen Rating Block */}
+                {selectedIssue.rating && (
+                  <div className="flex flex-col gap-2 p-4 bg-yellow-500/5 rounded-2xl border border-yellow-500/20 text-left mt-1">
+                    <span className="text-[10px] uppercase font-bold text-yellow-500 font-mono flex items-center gap-1.5 border-b border-yellow-500/20 pb-2 mb-1">
+                      ⭐ Citizen Resolution Rating
+                    </span>
+                    <div className="flex gap-1 mt-1 mb-1">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <Star key={star} className={`w-4 h-4 ${star <= selectedIssue.rating! ? 'fill-yellow-400 text-yellow-400' : 'text-gray-600'}`} />
+                      ))}
+                    </div>
+                    {selectedIssue.ratingFeedback && (
+                      <div className="mt-1 pt-1 border-t border-yellow-500/10 text-left">
+                        <span className="text-yellow-500 text-[10px] block font-sans">FEEDBACK</span>
+                        <strong className="text-yellow-100 text-[11px] block mt-0.5 leading-snug italic">"{selectedIssue.ratingFeedback}"</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Citizens Comments Thread block */}
                 <div className="flex flex-col gap-2.5 p-4 bg-gray-500/5 rounded-2xl border border-gray-700/10 text-left mt-1">
@@ -793,14 +1115,14 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
                   ) : (
                     <div className="flex flex-col gap-2.5 max-h-[220px] overflow-y-auto">
                       {selectedIssue.comments.map((com, idx) => (
-                        <div key={com.id || idx} className="p-2 bg-[rgba(255,255,255,0.01)] border border-gray-750 rounded-xl text-[11px]">
+                        <div key={com.userUID || idx} className="p-2 bg-[rgba(255,255,255,0.01)] border border-gray-750 rounded-xl text-[11px]">
                           <div className="flex justify-between items-center mb-1">
-                            <strong className="text-gray-300 font-bold">{com.name}</strong>
+                            <strong className="text-gray-300 font-bold">{com.userName}</strong>
                             <span className="text-[8px] text-gray-500 font-mono">
                               {new Date(com.createdAt).toLocaleString()}
                             </span>
                           </div>
-                          <p className="text-gray-400 leading-normal whitespace-pre-wrap">{com.text}</p>
+                          <p className="text-gray-400 leading-normal whitespace-pre-wrap">{com.message}</p>
                         </div>
                       ))}
                     </div>
@@ -809,78 +1131,208 @@ export default function AdminPanel({ user, issues, onRefresh }: AdminPanelProps)
               </div>
 
               {/* Right Column: Interactive Field Dispatch Actions */}
-              <div className="lg:col-span-5 flex flex-col gap-5 border-t lg:border-t-0 lg:border-l border-gray-750 pt-5 lg:pt-0 lg:pl-6 h-full justify-between text-left">
-                <form onSubmit={handleUpdateStatusSubmit} className="flex flex-col gap-5">
+              <div className="lg:col-span-5 flex flex-col gap-5 border-t lg:border-t-0 lg:border-l border-gray-750 pt-5 lg:pt-0 lg:pl-6 justify-between text-left pb-4">
+                <div className="flex flex-col gap-5">
                   <div className="pb-1 border-b border-gray-750 text-left">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
                       ⚙️ Dispatch Control Centre
                     </span>
-                    <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">Process this grievance in real-time or declare a work completion proof.</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">Process this grievance in real-time following strict protocol.</p>
                   </div>
 
-                  <div className="flex flex-col gap-1.5 text-left">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Workflow progression status</label>
-                    <select
-                      value={statusInput}
-                      onChange={(e: any) => setStatusInput(e.target.value)}
-                      className="p-3 bg-[var(--bg-void)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none"
+                  {selectedIssue.status === STATUS.ASSIGNED && (
+                    <button
+                      onClick={handleAccept}
+                      disabled={isSubmitting}
+                      className="w-full py-3.5 mt-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs hover:scale-101 transition-all disabled:opacity-50 cursor-pointer shadow-lg"
                     >
-                      <option value="Open">Open</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Resolved">Resolved</option>
-                    </select>
-                  </div>
+                      {isSubmitting ? "Processing..." : "Accept Case"}
+                    </button>
+                  )}
 
-                  {statusInput === "Resolved" && (
-                    <div className="flex flex-col gap-1.5 text-left">
-                      <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Validation Proof Photo URL</label>
-                      <input
-                        type="text"
-                        required
-                        value={afterPhoto}
-                        onChange={(e) => setAfterPhoto(e.target.value)}
-                        placeholder="Paste validated resolve photo url proof..."
-                        className="p-3 bg-[rgba(255,255,255,0.02)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none"
-                      />
+                  {selectedIssue.status === STATUS.ACCEPTED && (
+                    <button
+                      onClick={handleStart}
+                      disabled={isSubmitting}
+                      className="w-full py-3.5 mt-2 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl text-xs hover:scale-101 transition-all disabled:opacity-50 cursor-pointer shadow-lg"
+                    >
+                      {isSubmitting ? "Processing..." : "Start Inspection"}
+                    </button>
+                  )}
+
+                  {selectedIssue.status === STATUS.INSPECTION_STARTED && (
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-1.5 text-left">
+                        <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Before Images (Max 5, 5MB each)</label>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={(e) => handleFileChange(e, 'before')}
+                          className="text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-[var(--cyan)] file:text-slate-950 hover:file:bg-[var(--cyan)]/90"
+                        />
+                        <div className="text-[10px] text-gray-500">{beforeFiles.length} files selected</div>
+                        {beforeFiles.length > 0 && (
+                          <div className="flex gap-2 overflow-x-auto mt-2 pb-2">
+                            {beforeFiles.map((f, i) => (
+                              <div key={i} className="relative w-16 h-16 rounded-md overflow-hidden border border-gray-700 flex-shrink-0 group">
+                                <img src={URL.createObjectURL(f)} className="w-full h-full object-cover" alt="Before preview" />
+                                <button onClick={() => removeFile(i, 'before')} className="absolute top-1 right-1 bg-red-500/80 hover:bg-red-500 text-white rounded-full p-0.5 w-5 h-5 flex items-center justify-center text-[12px] opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-1.5 text-left">
+                        <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">After Images (Max 5, 5MB each)</label>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={(e) => handleFileChange(e, 'after')}
+                          className="text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-[var(--cyan)] file:text-slate-950 hover:file:bg-[var(--cyan)]/90"
+                        />
+                        <div className="text-[10px] text-gray-500">{afterFiles.length} files selected</div>
+                        {afterFiles.length > 0 && (
+                          <div className="flex gap-2 overflow-x-auto mt-2 pb-2">
+                            {afterFiles.map((f, i) => (
+                              <div key={i} className="relative w-16 h-16 rounded-md overflow-hidden border border-gray-700 flex-shrink-0 group">
+                                <img src={URL.createObjectURL(f)} className="w-full h-full object-cover" alt="After preview" />
+                                <button onClick={() => removeFile(i, 'after')} className="absolute top-1 right-1 bg-red-500/80 hover:bg-red-500 text-white rounded-full p-0.5 w-5 h-5 flex items-center justify-center text-[12px] opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-1.5 text-left">
+                        <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Work Completed</label>
+                        <input
+                          type="text"
+                          value={workCompleted}
+                          onChange={(e) => setWorkCompleted(e.target.value)}
+                          placeholder="e.g. Patched 3 potholes on main road"
+                          className="p-3 bg-[rgba(255,255,255,0.02)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none"
+                        />
+                      </div>
+                      
+                      <div className="flex flex-col gap-1.5 text-left">
+                        <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Materials Used</label>
+                        <input
+                          type="text"
+                          value={materialsUsed}
+                          onChange={(e) => setMaterialsUsed(e.target.value)}
+                          placeholder="e.g. 50kg asphalt, 10 liters tar"
+                          className="p-3 bg-[rgba(255,255,255,0.02)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1.5 text-left">
+                          <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Estimated Cost (₹)</label>
+                          <input
+                            type="number"
+                            value={estimatedCost}
+                            onChange={(e) => setEstimatedCost(e.target.value)}
+                            placeholder="e.g. 4500"
+                            className="p-3 bg-[rgba(255,255,255,0.02)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none"
+                          />
+                        </div>
+                        
+                        <div className="flex flex-col gap-1.5 text-left">
+                          <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Time Spent</label>
+                          <input
+                            type="text"
+                            value={timeSpent}
+                            onChange={(e) => setTimeSpent(e.target.value)}
+                            placeholder="e.g. 4 hours"
+                            className="p-3 bg-[rgba(255,255,255,0.02)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5 text-left">
+                        <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Inspection Remarks</label>
+                        <textarea
+                          rows={4}
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                          placeholder="Log repair details, dispatched engineers, material audits, progress updates..."
+                          className="p-3 bg-[rgba(255,255,255,0.02)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none resize-none"
+                        />
+                      </div>
+
+                      {isSubmitting && (uploadProgress > 0) && (
+                        <div className="w-full flex flex-col gap-2 mt-2">
+                          <div className="w-full bg-gray-800 rounded-full h-1.5">
+                            <div className="bg-[var(--cyan)] h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+                          </div>
+                          <div className="text-[10px] text-[var(--cyan)] font-mono text-center">{uploadStatusText}</div>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={handleComplete}
+                        disabled={isSubmitting}
+                        className="w-full py-3.5 mt-2 bg-[var(--cyan)] hover:bg-[var(--cyan)]/90 text-slate-950 font-bold rounded-xl text-xs hover:scale-101 transition-all disabled:opacity-50 cursor-pointer shadow-lg block relative overflow-hidden"
+                      >
+                        <span className="relative z-10">{isSubmitting ? "Uploading Evidence..." : "Complete Inspection"}</span>
+                      </button>
                     </div>
                   )}
 
-                  <div className="flex flex-col gap-1.5 text-left">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Inspection & Resolution Notes</label>
-                    <textarea
-                      rows={4}
-                      required
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Log repair details, dispatched engineers, material audits, progress updates..."
-                      className="p-3 bg-[rgba(255,255,255,0.02)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none resize-none"
-                    />
-                  </div>
+                  {selectedIssue.status === STATUS.INSPECTION_COMPLETED && (
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-1.5 text-left">
+                        <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Recommendation</label>
+                        <select
+                          value={recommendation}
+                          onChange={(e: any) => setRecommendation(e.target.value)}
+                          className="p-3 bg-[var(--bg-void)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none"
+                        >
+                          <option value="RESOLVE">Recommend Resolve</option>
+                          <option value="REJECT">Recommend Reject</option>
+                        </select>
+                      </div>
 
-                  <button
-                    type="submit"
-                    className="w-full py-3.5 mt-2 bg-[var(--cyan)] hover:bg-[var(--cyan)]/90 text-slate-950 font-bold rounded-xl text-xs hover:scale-101 transition-all cursor-pointer shadow-lg hover:shadow-[0_4px_20px_rgba(0,229,255,0.2)] block"
-                  >
-                    Post Field Report Update
-                  </button>
-                </form>
+                      <div className="flex flex-col gap-1.5 text-left">
+                        <label className="text-[10px] uppercase font-bold text-gray-400 font-mono tracking-wider">Recommendation Remarks</label>
+                        <textarea
+                          rows={4}
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                          placeholder="Explain why this issue should be resolved or rejected..."
+                          className="p-3 bg-[rgba(255,255,255,0.02)] border border-gray-700 text-xs text-white rounded-xl focus:border-[var(--cyan)] outline-none resize-none"
+                        />
+                      </div>
 
-                {/* If already resolved, show the after photograph here as feedback */}
-                {selectedIssue.status === "Resolved" && selectedIssue.afterPhotoUrl && (
-                  <div className="p-3 bg-[var(--green)]/5 rounded-2xl border border-[var(--green)]/15 flex flex-col gap-2 mt-4 text-left">
-                    <span className="text-[9px] text-[var(--green)] uppercase font-bold font-mono block">
-                      ✅ Completed Resolution Attachment
-                    </span>
-                    <div className="h-28 rounded-lg overflow-hidden border border-[var(--green)]/10">
-                      <img 
-                        src={selectedIssue.afterPhotoUrl} 
-                        referrerPolicy="no-referrer" 
-                        alt="Resolution Proof" 
-                        className="w-full h-full object-cover" 
-                      />
+                      <button
+                        onClick={handleRecommend}
+                        disabled={isSubmitting}
+                        className="w-full py-3.5 mt-2 bg-[var(--green)] hover:bg-[var(--green)]/90 text-white font-bold rounded-xl text-xs hover:scale-101 transition-all disabled:opacity-50 cursor-pointer shadow-lg block"
+                      >
+                        {isSubmitting ? "Submitting..." : "Submit Recommendation"}
+                      </button>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {[STATUS.AWAITING_HQ_REVIEW, STATUS.RESOLVED, STATUS.REJECTED].includes(selectedIssue.status as any) && (
+                    <div className="flex flex-col gap-2">
+                      <div className="p-4 bg-[var(--cyan)]/10 border border-[var(--cyan)]/20 rounded-xl text-center text-[var(--cyan)] text-xs font-bold">
+                        Protocol Completed. Currently: {selectedIssue.status}
+                      </div>
+                      {selectedIssue.status === STATUS.RESOLVED && (
+                        <button
+                          onClick={() => generateResolutionCertificate(selectedIssue, user)}
+                          className="w-full py-3 bg-[var(--cyan)]/20 text-[var(--cyan)] font-bold rounded-xl text-xs hover:bg-[var(--cyan)]/30 transition-colors flex items-center justify-center gap-2 shadow-lg"
+                        >
+                          <Download className="w-4 h-4" /> Download Resolution Report (PDF)
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
