@@ -18,38 +18,31 @@ import { UserProfile, Issue } from "../types";
 import { useLiveIssues } from "../hooks/useLiveIssues";
 import { createIssue, confirmIssue } from "../services/issueService";
 import confetti from "canvas-confetti";
+import { locationData } from "../constants/locations";
 
 declare const L: any;
 
 const PLACE_SUGGESTIONS = [
-  { landmark: "Charminar Monument", district: "Old City Hyderabad", city: "Hyderabad", lat: 17.3616, lng: 78.4747 },
-  { landmark: "Birla Mandir", district: "Khairatabad", city: "Hyderabad", lat: 17.4062, lng: 78.4690 },
-  { landmark: "Golkonda Fort", district: "Golconda", city: "Hyderabad", lat: 17.3789, lng: 78.4004 },
-  { landmark: "Cyber Towers Building", district: "HITEC City", city: "Hyderabad", lat: 17.4504, lng: 78.3809 },
-  { landmark: "Inorbit Mall", district: "Madhapur", city: "Hyderabad", lat: 17.4348, lng: 78.3865 },
-  { landmark: "Gachibowli Stadium", district: "Gachibowli", city: "Hyderabad", lat: 17.4474, lng: 78.3446 },
-  { landmark: "Hussain Sagar Lake Park", district: "Necklace Road", city: "Hyderabad", lat: 17.4239, lng: 78.4738 },
-  { landmark: "Secunderabad Junction Station", district: "Secunderabad", city: "Hyderabad", lat: 17.4347, lng: 78.5015 },
-  { landmark: "Gateway of India", district: "Colaba", city: "Mumbai", lat: 18.9220, lng: 72.8347 },
-  { landmark: "Chhatrapati Shivaji Terminal", district: "Fort", city: "Mumbai", lat: 18.9400, lng: 72.8353 },
-  { landmark: "Marine Drive Promenade", district: "Churchgate", city: "Mumbai", lat: 18.9430, lng: 72.8230 },
-  { landmark: "Juhu Beach Chowpatty", district: "Juhu", city: "Mumbai", lat: 19.1026, lng: 72.8268 },
-  { landmark: "Bandra-Worli Sea Link Entrance", district: "Bandra West", city: "Mumbai", lat: 19.0330, lng: 72.8180 },
-  { landmark: "Sanjay Gandhi National Park Gate", district: "Borivali East", city: "Mumbai", lat: 19.2272, lng: 72.8596 },
-  { landmark: "Andheri Metro Station", district: "Andheri East", city: "Mumbai", lat: 19.1197, lng: 72.8468 },
-  { landmark: "Powai Lake Boating Point", district: "Powai", city: "Mumbai", lat: 19.1278, lng: 72.9060 },
-  { landmark: "Dadar Junction Station", district: "Dadar", city: "Mumbai", lat: 19.0178, lng: 72.8478 },
-  { landmark: "Phoenix Marketcity", district: "Kurla West", city: "Mumbai", lat: 19.0886, lng: 72.8825 },
-  { landmark: "Lumbini Park Gates", district: "Khairatabad", city: "Hyderabad", lat: 17.4140, lng: 78.4760 },
-  { landmark: "Salar Jung Museum", district: "Darulshifa", city: "Hyderabad", lat: 17.3711, lng: 78.4804 },
-  { landmark: "Osmania University", district: "Amberpet", city: "Hyderabad", lat: 17.4137, lng: 78.5284 },
-  { landmark: "Warangal Fort Ruins", district: "Mathwada", city: "Warangal", lat: 17.9555, lng: 79.6231 },
-  { landmark: "Thousand Pillar Temple", district: "Hanamkonda", city: "Warangal", lat: 18.0031, lng: 79.5758 },
-  { landmark: "Kakatiya University Gate", district: "Vidyaranyapuri", city: "Warangal", lat: 18.0197, lng: 79.5678 },
-  { landmark: "Nizamabad Clock Tower", district: "Kanteshwar", city: "Nizamabad", lat: 18.6725, lng: 78.0999 },
-  { landmark: "Mallaram Forest Cottage", district: "Mallaram", city: "Nizamabad", lat: 18.6672, lng: 78.1883 },
-  { landmark: "Karimnagar Bus Station", district: "Mukarampura", city: "Karimnagar", lat: 18.4385, lng: 79.1288 },
-  { landmark: "Lower Manair Dam Resort", district: "Alugunur", city: "Karimnagar", lat: 18.4042, lng: 79.1311 }
+  { landmark: "Charminar Monument", district: "Hyderabad", city: "Hyderabad", lat: 17.3616, lng: 78.4747 },
+  { landmark: "Birla Mandir", district: "Hyderabad", city: "Hyderabad", lat: 17.4062, lng: 78.4690 },
+  { landmark: "Golkonda Fort", district: "Hyderabad", city: "Hyderabad", lat: 17.3789, lng: 78.4004 },
+  { landmark: "Cyber Towers Building", district: "Hyderabad", city: "Hyderabad", lat: 17.4504, lng: 78.3809 },
+  { landmark: "Inorbit Mall", district: "Hyderabad", city: "Hyderabad", lat: 17.4348, lng: 78.3865 },
+  { landmark: "Gachibowli Stadium", district: "Hyderabad", city: "Hyderabad", lat: 17.4474, lng: 78.3446 },
+  { landmark: "Hussain Sagar Lake Park", district: "Hyderabad", city: "Hyderabad", lat: 17.4239, lng: 78.4738 },
+  { landmark: "Secunderabad Junction Station", district: "Hyderabad", city: "Hyderabad", lat: 17.4347, lng: 78.5015 },
+  { landmark: "Lumbini Park Gates", district: "Hyderabad", city: "Hyderabad", lat: 17.4140, lng: 78.4760 },
+  { landmark: "Salar Jung Museum", district: "Hyderabad", city: "Hyderabad", lat: 17.3711, lng: 78.4804 },
+  { landmark: "Osmania University", district: "Hyderabad", city: "Hyderabad", lat: 17.4137, lng: 78.5284 },
+  { landmark: "Warangal Fort Ruins", district: "Warangal", city: "Warangal", lat: 17.9555, lng: 79.6231 },
+  { landmark: "Thousand Pillar Temple", district: "Warangal", city: "Warangal", lat: 18.0031, lng: 79.5758 },
+  { landmark: "Kakatiya University Gate", district: "Warangal", city: "Warangal", lat: 18.0197, lng: 79.5678 },
+  { landmark: "Nizamabad Clock Tower", district: "Nizamabad", city: "Nizamabad", lat: 18.6725, lng: 78.0999 },
+  { landmark: "Mallaram Forest Cottage", district: "Nizamabad", city: "Nizamabad", lat: 18.6672, lng: 78.1883 },
+  { landmark: "Karimnagar Bus Station", district: "Karimnagar", city: "Karimnagar", lat: 18.4385, lng: 79.1288 },
+  { landmark: "Lower Manair Dam Resort", district: "Karimnagar", city: "Karimnagar", lat: 18.4042, lng: 79.1311 },
+  { landmark: "Vijayawada Kanaka Durga Temple", district: "Krishna", city: "Vijayawada", lat: 16.5131, lng: 80.6094 },
+  { landmark: "Prakasam Barrage", district: "Krishna", city: "Vijayawada", lat: 16.5074, lng: 80.6044 }
 ];
 
 interface ReportIssueProps {
@@ -72,9 +65,9 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
   const [district, setDistrict] = useState("");
   const [ulb, setUlb] = useState("");
 
-  const states = ["Maharashtra", "Telangana", "Delhi", "Karnataka"];
-  const districtsList = ["Mumbai Suburban", "Mumbai City", "Hyderabad", "Warangal"];
-  const ulbsList = ["BMC", "GHMC", "NDMC"];
+  const states = Object.keys(locationData);
+  const districtsList = state && locationData[state] ? Object.keys(locationData[state]) : [];
+  const ulbsList = state && district && locationData[state][district] ? locationData[state][district] : [];
 
   // Location suggestions autocomplete
   const [matchingSuggestions, setMatchingSuggestions] = useState<typeof PLACE_SUGGESTIONS>([]);
@@ -98,9 +91,37 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
 
   const handleSelectSuggestion = (item: typeof PLACE_SUGGESTIONS[0]) => {
     setLandmark(item.landmark);
-    setDistrict(item.district);
-      setState("Maharashtra");
-      setUlb("BMC");
+    
+    // Find state and district based on the item
+    let foundState = "";
+    let foundDistrict = "";
+    let foundUlb = "";
+    
+    for (const st of Object.keys(locationData)) {
+      if (locationData[st][item.district]) {
+        foundState = st;
+        foundDistrict = item.district;
+        const ulbs = locationData[st][item.district];
+        const matchUlb = ulbs.find(u => u.toLowerCase().includes(item.city.toLowerCase()));
+        foundUlb = matchUlb || ulbs[0] || "";
+        break;
+      } else {
+        // search all districts
+        const matchDist = Object.keys(locationData[st]).find(d => d.toLowerCase().includes(item.district.toLowerCase()));
+        if (matchDist) {
+          foundState = st;
+          foundDistrict = matchDist;
+          const ulbs = locationData[st][matchDist];
+          const matchUlb = ulbs.find(u => u.toLowerCase().includes(item.city.toLowerCase()));
+          foundUlb = matchUlb || ulbs[0] || "";
+          break;
+        }
+      }
+    }
+
+    setState(foundState);
+    setDistrict(foundDistrict);
+    setUlb(foundUlb);
     setLat(item.lat);
     setLng(item.lng);
     setAddress(`${item.landmark}, ${item.district}, ${item.city}`);
@@ -123,6 +144,7 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
   const [address, setAddress] = useState("");
 
   const [image, setImage] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | Blob | null>(null);
   const [uploading, setUploading] = useState(false);
 
   // Live GPS tracking Leaflet map states & refs
@@ -183,6 +205,7 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
 
   const processImageFile = (file: File) => {
     if (!file) return;
+    setImageFile(file);
     setUploading(true);
 
     const reader = new FileReader();
@@ -247,10 +270,15 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg");
-        setImage(dataUrl);
-        stopCamera();
-        setShowCameraPreview(false);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            setImageFile(blob);
+            const dataUrl = canvas.toDataURL("image/jpeg");
+            setImage(dataUrl);
+            stopCamera();
+            setShowCameraPreview(false);
+          }
+        }, "image/jpeg");
       }
     }
   };
@@ -283,21 +311,47 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
           const data = await res.json();
           if (data && data.address) {
             const addr = data.address;
-            const fetchedCity = addr.city || addr.town || addr.village || addr.municipality || "Hyderabad";
-            const fetchedDistrict = addr.suburb || addr.neighbourhood || addr.state_district || addr.county || "Hyderabad";
-            const fetchedLandmark = addr.amenity || addr.building || addr.road || addr.industrial || addr.commercial || addr.subway || addr.railway || "";
             
-            setUlb(fetchedCity);
-            setDistrict(fetchedDistrict);
+            const rawState = addr.state || "";
+            const rawDistrict = addr.state_district || addr.county || addr.suburb || addr.neighbourhood || "";
+            const rawCity = addr.city || addr.town || addr.village || addr.municipality || "";
+            
+            let finalState = "Not found";
+            let finalDistrict = "Not found";
+            let finalUlb = "Not found";
+
+            if (rawState && locationData[rawState]) {
+              finalState = rawState;
+              const districts = Object.keys(locationData[rawState]);
+              
+              const matchedDistrict = districts.find(d => rawDistrict && d.toLowerCase().includes(rawDistrict.toLowerCase().replace(" district", "")) || rawDistrict.toLowerCase().includes(d.toLowerCase()));
+              if (matchedDistrict) {
+                finalDistrict = matchedDistrict;
+                const ulbs = locationData[rawState][matchedDistrict];
+                const matchedUlb = ulbs.find(u => rawCity && (u.toLowerCase().includes(rawCity.toLowerCase()) || rawCity.toLowerCase().includes(u.toLowerCase().replace(" municipality", ""))));
+                if (matchedUlb) {
+                  finalUlb = matchedUlb;
+                }
+              }
+            }
+            
+            setState(finalState);
+            setDistrict(finalDistrict);
+            setUlb(finalUlb);
+
+            const fetchedLandmark = addr.amenity || addr.building || addr.road || addr.industrial || addr.commercial || addr.subway || addr.railway || "";
             if (fetchedLandmark) {
               setLandmark(fetchedLandmark);
             } else {
               setLandmark(addr.road || "");
             }
-            setAddress(data.display_name || `${fetchedLandmark ? `${fetchedLandmark}, ` : ""}${fetchedDistrict}, ${fetchedCity}`);
+            setAddress(data.display_name || `${fetchedLandmark ? `${fetchedLandmark}, ` : ""}${rawDistrict}, ${rawCity}`);
           }
         } catch (err) {
           console.error("Error reverse-geocoding coordinates:", err);
+          setState("Not found");
+          setDistrict("Not found");
+          setUlb("Not found");
           setAddress(`Coords: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
         }
       },
@@ -377,15 +431,67 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
     };
   }, []);
 
-  // Align map viewport with precise GPS coordinates
+  // Align map viewport with precise GPS coordinates and show nearby issues
   useEffect(() => {
     if (mapRef.current) {
       mapRef.current.setView([lat, lng], 15);
+      
+      // Render nearby issues within 200m
+      const R = 6371e3; // metres
+      const lat1 = lat * Math.PI / 180;
+      
+      // Remove previous nearby markers
+      mapRef.current.eachLayer((layer: any) => {
+        if (layer.options && layer.options.className === "nearby-issue-marker") {
+          mapRef.current.removeLayer(layer);
+        }
+      });
+      
+      issues.forEach(issue => {
+        if (issue.status === "Resolved") return;
+        
+        const lat2 = issue.latitude * Math.PI / 180;
+        const deltaLat = (issue.latitude - lat) * Math.PI / 180;
+        const deltaLng = (issue.longitude - lng) * Math.PI / 180;
+
+        const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
+                  Math.cos(lat1) * Math.cos(lat2) *
+                  Math.sin(deltaLng/2) * Math.sin(deltaLng/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const d = R * c; // in metres
+
+        if (d < 200) {
+          const customMarkerHtml = `
+            <div style="position: relative; display: flex; align-items: center; justify-content: center;">
+              <div style="
+                width: 12px; 
+                height: 12px; 
+                background: #ffaa00; 
+                border: 2px solid #ffffff; 
+                border-radius: 50%; 
+                box-shadow: 0 0 5px rgba(255, 170, 0, 0.8);
+                z-index: 5;
+              "></div>
+            </div>
+          `;
+          
+          const customIcon = L.divIcon({
+            html: customMarkerHtml,
+            className: "nearby-issue-marker custom-div-icon",
+            iconSize: [12, 12],
+            iconAnchor: [6, 6]
+          });
+          
+          L.marker([issue.latitude, issue.longitude], { icon: customIcon, className: "nearby-issue-marker" })
+           .bindPopup(`<div style="font-size: 10px; font-weight: bold;">Nearby: ${issue.title}</div>`)
+           .addTo(mapRef.current);
+        }
+      });
     }
     if (liveMarkerRef.current) {
       liveMarkerRef.current.setLatLng([lat, lng]);
     }
-  }, [lat, lng]);
+  }, [lat, lng, issues]);
 
   const proceedWithSubmission = async () => {
     setLoading(true);
@@ -393,6 +499,11 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
     const fullDetailsLocation = `${landmark ? `${landmark}, ` : ""}${district}, ${ulb}`;
 
     try {
+        console.log("TRACE [ReportIssue]: Submitting payload", {
+          imageUrl: image || "",
+          imageFile: imageFile || null
+        });
+
       const res = await createIssue({
         title,
         description,
@@ -415,8 +526,11 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
         resolutionImages: [],
         timeline: [],
         comments: [],
-        imageUrl: image || ""
+        imageUrl: image || "",
+        imageFile: imageFile || null
       } as any);
+
+      console.log("TRACE [ReportIssue]: createIssue completed, res:", res);
 
       if (!res) {
         alert('Queued for sync: The network is currently unavailable. Your complaint will be synchronized once the connection is restored.');
@@ -928,8 +1042,8 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
             </p>
 
             <div className="p-4 bg-slate-500/5 dark:bg-[rgba(255,255,255,0.02)] rounded-2xl border border-slate-200 dark:border-gray-700/20 text-xs">
-              {similarIssue.imageUrl && (
-                <img src={similarIssue.imageUrl} alt={similarIssue.title} className="w-full h-auto rounded-lg mb-4" />
+              {(similarIssue.imageUrl || similarIssue.imageData) && (
+                <img src={similarIssue.imageUrl || similarIssue.imageData || ""} alt={similarIssue.title} className="w-full h-auto rounded-lg mb-4" />
               )}
               <div className="font-extrabold text-sm flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />

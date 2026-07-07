@@ -343,6 +343,12 @@ export default function MapExplorer({ user }: MapExplorerProps) {
                 </span>
                 <span className="text-[10px] text-gray-500 font-mono">Reference: #{selectedIssue.uid?.split("_").pop()}</span>
               </div>
+              
+              {(selectedIssue.imageUrl || selectedIssue.imageData) && (
+                <div className="mt-2 w-full h-32 md:h-48 rounded-xl overflow-hidden border border-gray-700/30">
+                  <img src={selectedIssue.imageUrl || selectedIssue.imageData || ""} alt={selectedIssue.title} className="w-full h-full object-cover" />
+                </div>
+              )}
               <h4 className="font-bold text-sm text-[var(--text-1)] mt-1.5">{selectedIssue.title}</h4>
               <p className="text-[11px] text-[var(--text-2)] mt-0.5 leading-relaxed line-clamp-2">"{selectedIssue.description}"</p>
             </div>

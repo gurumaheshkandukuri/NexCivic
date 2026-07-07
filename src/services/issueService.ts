@@ -15,7 +15,7 @@ import {
   getDocs,
   limit
 } from "firebase/firestore";
-import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, uploadString } from "firebase/storage";
 import { db, storage, OperationType, handleFirestoreError } from "../firebase-init";
 import { Issue, UserProfile, TimelineItem, Comment } from "../types";
 import { ROLES } from "../constants/roles";
@@ -139,6 +139,8 @@ export async function createIssue(issueData: Partial<Issue>): Promise<{ id: stri
         ulb: issueData.ulb || "",
         area: issueData.area || "",
         landmark: issueData.landmark || "",
+        imageUrl: null,
+        imageData: (issueData as any).imageUrl || null,
         latitude: issueData.latitude || 19.076,
         longitude: issueData.longitude || 72.8777,
         reportedByUID: issueData.reportedByUID || "anonymous",
@@ -207,6 +209,18 @@ export async function createIssue(issueData: Partial<Issue>): Promise<{ id: stri
         }));
       }
     });
+
+    // STEP 6: Console log immediately after Firestore create
+    console.log("TRACE [issueService]: Document created successfully.");
+    console.log("TRACE [issueService]: imageData length is:", (issueData as any).imageUrl?.length || "undefined");
+
+    // TEMPORARILY DISABLED FIREBASE STORAGE ENTIRELY
+    /*
+    // Upload image OUTSIDE the transaction to avoid timeout and retry issues
+    if ((issueData as any).imageFile) {
+      // ... storage code bypassed for Zero-Cost fallback ...
+    }
+    */
 
     // Since ReportIssue.tsx uses the returned ID (uid), return uid so that component knows to update itself
     // We return an object containing id, complaintId, and assignedInspectorName
@@ -935,7 +949,10 @@ export function subscribeToIssues(
             createdAt: raw.createdAt,
             title: raw.title,
             description: raw.description,
+            imageUrl: raw.imageUrl,
             communitySupportCount: raw.communitySupportCount,
+            reportedByName: raw.reportedByName,
+            reportedByUID: raw.reportedByUID,
             area: raw.area,
             state: raw.state,
             landmark: raw.landmark,

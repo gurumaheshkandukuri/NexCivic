@@ -482,9 +482,12 @@ export default function AdminPanel({ user }: AdminPanelProps) {
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex flex-col gap-6 text-left">
-      
-      {/* Sub tabs line */}
-      <div className="flex border-b border-gray-750 gap-4 mb-4">
+      {/* Tab Navigation */}
+      {(() => {
+        console.log("TRACE AdminPanel selectedIssue render:", selectedIssue);
+        return null;
+      })()}
+      <div className="flex border-b border-gray-800 mb-6 px-6 pt-6">
         {(["overview", "reports", "imports", "duplicates"] as const).map((tab) => (
           <button
             key={tab}
@@ -933,10 +936,16 @@ export default function AdminPanel({ user }: AdminPanelProps) {
                     🖼️ Original Report Photograph
                   </span>
                   <div className="relative h-56 w-full rounded-2xl border border-gray-750 bg-gray-950/40 overflow-hidden flex items-center justify-center shadow-inner">
-                    {selectedIssue.inspectionImages && selectedIssue.inspectionImages.length > 0 ? (
+                    {selectedIssue.imageUrl ? (
                       <img 
-                        src={selectedIssue.inspectionImages[0]} 
+                        src={selectedIssue.imageUrl} 
                         referrerPolicy="no-referrer" 
+                        alt={selectedIssue.title} 
+                        className="w-full h-full object-cover" 
+                      />
+                    ) : selectedIssue.imageData ? (
+                      <img 
+                        src={selectedIssue.imageData} 
                         alt={selectedIssue.title} 
                         className="w-full h-full object-cover" 
                       />

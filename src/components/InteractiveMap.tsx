@@ -324,6 +324,7 @@ export default function InteractiveMap({
       // Popup Content template matching request Layout
       const popupHtml = `
           <div class="p-2 select-none" style="min-width: 180px;">
+            ${(issue.imageUrl || issue.imageData) ? `<img src="${issue.imageUrl || issue.imageData}" alt="${issue.title}" style="width: 100%; height: 100px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;" />` : ''}
             <div class="flex items-center gap-1 font-display font-bold text-xs uppercase mb-1 text-[var(--cyan)]">
               <span>${issue.category}</span>
               <span style="font-size: 9px;" class="px-1.5 py-0.5 rounded ml-auto text-white" style="background: ${color};">

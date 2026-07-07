@@ -974,9 +974,9 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
                 </div>
               </div>
 
-              {selectedIssue.imageUrl && (
+              {(selectedIssue.imageUrl || selectedIssue.imageData) && (
                 <div className="w-full h-32 rounded-lg overflow-hidden border border-gray-800">
-                  <img src={selectedIssue.imageUrl} className="w-full h-full object-cover" />
+                  <img src={selectedIssue.imageUrl || selectedIssue.imageData || ""} className="w-full h-full object-cover" />
                 </div>
               )}
 

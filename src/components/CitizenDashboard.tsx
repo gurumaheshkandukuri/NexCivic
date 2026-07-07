@@ -135,9 +135,9 @@ export default function CitizenDashboard({ user }: CitizenDashboardProps) {
           {userIssues.length > 0 ? (
             userIssues.slice(0, 9).map((issue) => (
               <div key={issue.id} className={`${clayCardStyle} flex flex-col group cursor-pointer hover:ring-2 hover:ring-cyan-500/50`} onClick={() => setSelectedIssue(issue)}>
-                {issue.imageUrl && (
+                {(issue.imageUrl || issue.imageData) && (
                   <div className="w-full h-40 mb-4 rounded-lg overflow-hidden">
-                    <img src={issue.imageUrl} alt={issue.title} className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-300" />
+                    <img src={issue.imageUrl || issue.imageData || ""} alt={issue.title} className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-300" />
                   </div>
                 )}
                 <div className="flex justify-between items-start mb-2">

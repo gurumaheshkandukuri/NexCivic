@@ -57,6 +57,8 @@ export interface Issue {
   longitude?: number;
   reportedByUID: string;
   reportedByName: string;
+  imageUrl?: string | null;
+  imageData?: string | null;
   assignedInspectorUID?: string | null;
   assignedInspectorName?: string | null;
   assignedInspectorEmail?: string | null;
