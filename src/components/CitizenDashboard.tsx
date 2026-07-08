@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { Award, TrendingUp, FileText, CheckCircle, AlertTriangle, MapPin, Tag, Calendar, X, Star, Download, Image as ImageIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useLiveIssues } from '../hooks/useLiveIssues';
+import ComplaintDetailsModal from './ComplaintDetailsModal';
 
 interface CitizenDashboardProps {
   user: UserProfile;
@@ -175,6 +176,15 @@ export default function CitizenDashboard({ user }: CitizenDashboardProps) {
           )}
         </div>
       </div>
+
+      {selectedIssue && (
+        <ComplaintDetailsModal 
+          issue={selectedIssue} 
+          user={user} 
+          onClose={() => setSelectedIssue(null)} 
+          onRefresh={onRefresh} 
+        />
+      )}
     </div>
   );
 }
