@@ -539,6 +539,23 @@ export function uploadInspectionImage(
   onProgress?: (progress: number) => void
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    console.log(`TRACE [issueService]: Using zero-cost base64 fallback for inspection image (${type})`);
+    
+    // Simulate progress
+    if (onProgress) onProgress(50);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        if (onProgress) onProgress(100);
+        resolve(reader.result as string);
+    };
+    reader.onerror = (error) => {
+        console.error("FileReader Error:", error);
+        reject(error);
+    };
+    reader.readAsDataURL(file);
+
+    /* TEMPORARILY DISABLED FIREBASE STORAGE
     try {
       const filename = `${Date.now()}_${file.name}`;
       const storageRef = ref(storage, `issues/${complaintId}/${type}/${filename}`);
@@ -563,6 +580,7 @@ export function uploadInspectionImage(
       console.error("Firebase Storage Upload Error:", error);
       reject(error);
     }
+    */
   });
 }
 
