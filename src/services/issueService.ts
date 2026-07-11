@@ -89,41 +89,22 @@ export async function createIssue(issueData: Partial<Issue>): Promise<{ id: stri
           updatedByUID: issueData.reportedByUID || "system",
           updatedByName: issueData.reportedByName || "System",
           updatedByRole: ROLES.CITIZEN,
-          remarks: "Issue submitted by citizen.",
-          timestamp: new Date().toISOString()
-        },
-        {
-          id: `${nowTs}_2_system`,
-          status: STATUS.SUBMITTED,
-          updatedByUID: "system",
-          updatedByName: "System",
-          updatedByRole: "System",
-          remarks: `Complaint ID Generated: ${complaintId}`,
-          timestamp: new Date().toISOString()
+          remarks: `Issue submitted by citizen. Complaint ID Generated: ${complaintId}`,
+          timestamp: new Date(nowTs).toISOString()
         }
       ];
 
       if (assignedInspectorUID) {
         initialTimeline.push({
-          id: `${nowTs}_3_system`,
+          id: `${nowTs}_2_system`,
           status: STATUS.ASSIGNED,
           updatedByUID: "system",
           updatedByName: "System",
           updatedByRole: "System",
           remarks: `Inspector Auto Assigned: ${assignedInspectorName}`,
-          timestamp: new Date().toISOString()
+          timestamp: new Date(nowTs + 1).toISOString()
         });
       }
-
-      initialTimeline.push({
-        id: `${nowTs}_4_system`,
-        status: STATUS.SUBMITTED,
-        updatedByUID: "system",
-        updatedByName: "System",
-        updatedByRole: "System",
-        remarks: `Citizen Notified.`,
-        timestamp: new Date().toISOString()
-      });
 
       const payload: Issue = {
         uid: id,
@@ -804,40 +785,8 @@ export async function completeInspection(
       updatedByUID: user.uid,
       updatedByName: user.name,
       updatedByRole: user.role,
-      remarks: `Inspection Completed.`
+      remarks: `Inspection Completed. Remarks: ${notesPayload.remarks || 'None'}. Images uploaded: ${beforeImages.length} before, ${afterImages.length} after.`
     };
-    
-    const notesTimelineItem: TimelineItem = {
-      id: crypto.randomUUID(),
-      status: STATUS.IN_PROGRESS,
-      timestamp: new Date(Date.now() + 200).toISOString(),
-      updatedByUID: user.uid,
-      updatedByName: user.name,
-      updatedByRole: user.role,
-      remarks: `Inspection Notes Submitted. Remarks: ${notesPayload.remarks}`
-    };
-    
-    const beforeImageEvents: TimelineItem[] = beforeImages.map((url, i) => ({
-      id: crypto.randomUUID(),
-      status: STATUS.IN_PROGRESS,
-      timestamp: new Date(Date.now() + i).toISOString(),
-      updatedByUID: user.uid,
-      updatedByName: user.name,
-      updatedByRole: user.role,
-      remarks: `Before Image Uploaded`
-    }));
-
-    const afterImageEvents: TimelineItem[] = afterImages.map((url, i) => ({
-      id: crypto.randomUUID(),
-      status: STATUS.IN_PROGRESS,
-      timestamp: new Date(Date.now() + 100 + i).toISOString(),
-      updatedByUID: user.uid,
-      updatedByName: user.name,
-      updatedByRole: user.role,
-      remarks: `After Image Uploaded`
-    }));
-
-    const allEvents = [...beforeImageEvents, ...afterImageEvents, timelineItem, notesTimelineItem];
 
     const batch = writeBatch(db);
 
@@ -853,7 +802,7 @@ export async function completeInspection(
       inspectionRemarks: notesPayload.remarks || null,
       lastUpdatedBy: user.uid,
       lastUpdatedAt: serverTimestamp(),
-      timeline: arrayUnion(...allEvents)
+      timeline: arrayUnion(timelineItem)
     });
 
     if (citizenUid && citizenUid !== "anonymous") {
@@ -1100,7 +1049,16 @@ export async function mergeIssues(primaryId: string, duplicateIds: string[], byU
         status: STATUS.RESOLVED,
         updatedAt: serverTimestamp(),
         lastUpdatedBy: byUserId,
-        lastUpdatedAt: serverTimestamp()
+        lastUpdatedAt: serverTimestamp(),
+        timeline: arrayUnion({
+          id: crypto.randomUUID(),
+          status: STATUS.RESOLVED,
+          timestamp: new Date().toISOString(),
+          updatedByUID: byUserId,
+          updatedByName: "System",
+          updatedByRole: "System",
+          remarks: `Issue closed as duplicate of ${primaryId}.`
+        })
       });
     });
 
@@ -1153,22 +1111,11 @@ export async function submitResolutionRating(
     if (data.reportedByUID !== user.uid) throw new Error("Unauthorized");
     if (data.status !== STATUS.RESOLVED) throw new Error("Invalid state for rating");
 
-    const timelineItem: TimelineItem = {
-      id: crypto.randomUUID(),
-      status: STATUS.RESOLVED,
-      timestamp: new Date().toISOString(),
-      updatedByUID: user.uid,
-      updatedByName: user.name,
-      updatedByRole: user.role,
-      remarks: `Citizen Resolution Rating: ${rating} Stars. Feedback: ${feedback || "None provided."}`
-    };
-
     const batch = writeBatch(db);
 
     batch.update(docRef, {
       rating,
       ratingFeedback: feedback,
-      timeline: arrayUnion(timelineItem),
       updatedAt: serverTimestamp()
     });
 
