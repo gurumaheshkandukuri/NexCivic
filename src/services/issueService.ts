@@ -528,6 +528,89 @@ export async function updateIssueStatus(
   }
 }
 
+export async function rejectResolutionHQ(
+  issueId: string,
+  user: UserProfile,
+  remarks: string
+): Promise<void> {
+  const path = `issues/${issueId}`;
+  try {
+    const docRef = doc(db, "issues", issueId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) return;
+    const issue = snap.data() as Issue;
+
+    if (user.role !== ROLES.MUNICIPALITY_HQ) {
+      throw new Error("Unauthorized: Only HQ can reject resolutions.");
+    }
+    if (user.assignedState !== issue.state) {
+      throw new Error("Unauthorized: Outside assigned state.");
+    }
+
+    const batch = writeBatch(db);
+
+    const timelineItem: TimelineItem = {
+      id: crypto.randomUUID(),
+      status: STATUS.IN_PROGRESS as any,
+      timestamp: new Date().toISOString(),
+      updatedByUID: user.uid,
+      updatedByName: user.name,
+      updatedByRole: user.role,
+      remarks: `HQ Rejected Resolution: ${remarks}`
+    };
+
+    batch.update(docRef, {
+      status: STATUS.IN_PROGRESS,
+      recommendationStatus: null,
+      lastUpdatedBy: user.uid,
+      lastUpdatedAt: serverTimestamp(),
+      timeline: arrayUnion(timelineItem)
+    });
+
+    // Notify Inspector
+    if (issue.assignedInspectorUID) {
+      batch.set(doc(collection(db, "notifications")), getAdvancedNotificationPayload({
+        targetUID: issue.assignedInspectorUID,
+        type: "HQ_REJECTED",
+        category: "WORKFLOW",
+        title: "Resolution Rejected by HQ",
+        message: `HQ ${user.name} rejected your resolution for ${issue.complaintId}. Notes: ${remarks}`,
+        severity: "high",
+        actorUID: user.uid,
+        complaintUID: issueId,
+        complaintId: issue.complaintId,
+        state: issue.state,
+        district: issue.district,
+        actionRoute: `/dashboard/issue/${issueId}`
+      }));
+    }
+
+    // Notify Citizen
+    if (issue.reportedByUID && issue.reportedByUID !== "anonymous") {
+      batch.set(doc(collection(db, "notifications")), getAdvancedNotificationPayload({
+        targetUID: issue.reportedByUID,
+        type: "HQ_REJECTED",
+        category: "WORKFLOW",
+        title: "Further Inspection Required",
+        message: `HQ has requested further inspection for your issue "${issue.title}". It remains In Progress.`,
+        severity: "medium",
+        actorUID: user.uid,
+        complaintUID: issueId,
+        complaintId: issue.complaintId,
+        state: issue.state,
+        district: issue.district,
+        actionRoute: `/dashboard/issue/${issueId}`
+      }));
+    }
+
+    await batch.commit();
+    createActivityLog(user.uid, `Rejected resolution for issue ${issueId}`, user.role);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+
 // -----------------------------------------------------
 // SPRINT 4B - FIELD INSPECTOR WORKFLOW (STRICT FSM)
 // -----------------------------------------------------

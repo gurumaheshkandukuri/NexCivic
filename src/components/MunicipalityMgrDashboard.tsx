@@ -35,7 +35,8 @@ import { CATEGORIES, CATEGORY_LIST } from "../constants/categories";
 import { 
   updateIssueStatus, 
   mergeIssues, 
-  createIssue
+  createIssue,
+  rejectResolutionHQ
 } from "../services/issueService";
 import {
   getImportBatches,
@@ -312,7 +313,29 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
     setAfterPhoto("");
     setAssignedDept("");
     setAssignedOfficer("");
-    
+  };
+
+  const handleRejectResolution = async () => {
+    if (!selectedIssue) return;
+    if (!notes) {
+      alert("Please provide rejection notes in the 'Resolution Logs' field.");
+      return;
+    }
+
+    const issueId = selectedIssue.uid!;
+
+    await rejectResolutionHQ(issueId, user, notes);
+
+    setHighlightedId(issueId);
+    setTimeout(() => {
+      setHighlightedId(null);
+    }, 5000);
+
+    setSelectedIssue(null);
+    setNotes("");
+    setAfterPhoto("");
+    setAssignedDept("");
+    setAssignedOfficer("");
   };
 
   const handleDeleteBatch = async (batchId: string, type: "issues" | "survey") => {
@@ -1100,13 +1123,20 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mt-4">
+                <div className="grid grid-cols-3 gap-3 mt-4">
                   <button
                     type="button"
                     onClick={() => setSelectedIssue(null)}
                     className="py-2.5 border border-gray-800 hover:border-gray-600 rounded-lg text-[11px] font-bold text-center"
                   >
                     Discard Changes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRejectResolution}
+                    className="py-2.5 border border-red-500/30 hover:border-red-500/60 text-red-400 rounded-lg text-[11px] font-bold text-center"
+                  >
+                    Reject Resolution
                   </button>
                   <button
                     type="submit"

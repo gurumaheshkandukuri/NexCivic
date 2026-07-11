@@ -978,12 +978,14 @@ export default function AdminPanel({ user }: AdminPanelProps) {
                         <span className="text-gray-500 text-[10px] block font-sans">NAME</span>
                         <strong className="text-[var(--text-1)]">{selectedIssue.reportedByName || "Anonymous Resident"}</strong>
                       </div>
-                      <div className="mt-1">
-                        <span className="text-gray-500 text-[10px] block font-sans">EMAIL</span>
-                        <strong className="text-[var(--text-2)] break-all">
-                          {reporterEmail || (selectedIssue.reportedByUID === "anonymous" ? "Anonymous" : "Fetching...")}
-                        </strong>
-                      </div>
+                      {reporterEmail && (
+                        <div className="mt-1">
+                          <span className="text-gray-500 text-[10px] block font-sans">EMAIL</span>
+                          <strong className="text-[var(--text-2)] break-all">
+                            {reporterEmail}
+                          </strong>
+                        </div>
+                      )}
                     </div>
                   </div>
 

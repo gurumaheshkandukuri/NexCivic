@@ -169,20 +169,34 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Check proximity for similar issues during coordinates / details typing
+  // Check proximity and similarity for similar issues during coordinates / details typing
   useEffect(() => {
     if (!lat || !lng) return;
 
-    // Haversine formula on client-side to preempt blockages
+    // Haversine formula and Jaccard similarity on client-side to preempt blockages
     const findNearby = () => {
+      // Don't flag duplicates if user hasn't typed enough to compare
+      if (!title || title.length < 5) {
+        setSimilarIssue(null);
+        return;
+      }
+
       const R = 6371e3; // metres
       const match = issues.find((issue) => {
-        if (issue.status === "Resolved") return false;
+        // Condition 1: Same complaint category.
+        if (issue.category !== category) return false;
         
+        // Condition 2: Existing complaint status is NOT "Resolved".
+        if (issue.status === "Resolved" || issue.status === "RESOLVED") return false;
+        
+        // Condition 5: Existing complaint is not the same complaint currently being edited.
+        if ((issue as any).id === createdId || issue.uid === createdId) return false;
+
+        // Condition 3: Distance between complaints is within configured threshold (100–150 meters).
         const lat1 = lat * Math.PI / 180;
-        const lat2 = issue.latitude * Math.PI / 180;
-        const deltaLat = (issue.latitude - lat) * Math.PI / 180;
-        const deltaLng = (issue.longitude - lng) * Math.PI / 180;
+        const lat2 = (issue.latitude || 0) * Math.PI / 180;
+        const deltaLat = ((issue.latitude || 0) - lat) * Math.PI / 180;
+        const deltaLng = ((issue.longitude || 0) - lng) * Math.PI / 180;
 
         const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
                   Math.cos(lat1) * Math.cos(lat2) *
@@ -190,13 +204,31 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const d = R * c; // in metres
 
-        return d < 200; // Within 200m
+        if (d > 150) return false; // Must be within 150m
+
+        // Condition 4: Title and/or description similarity exceeds configured threshold.
+        const getWords = (text: string) => (text || "").toLowerCase().split(/\W+/).filter(w => w.length > 2);
+        
+        const currentWords = new Set([...getWords(title), ...getWords(description)]);
+        const issueWords = new Set([...getWords(issue.title), ...getWords(issue.description)]);
+        
+        if (currentWords.size === 0 || issueWords.size === 0) return false;
+        
+        let intersection = 0;
+        currentWords.forEach(word => {
+          if (issueWords.has(word)) intersection++;
+        });
+        
+        const union = currentWords.size + issueWords.size - intersection;
+        const similarity = intersection / union;
+        
+        return similarity > 0.25; // 25% word overlap threshold
       });
       setSimilarIssue(match || null);
     };
 
     findNearby();
-  }, [lat, lng, issues]);
+  }, [lat, lng, issues, title, description, category, createdId]);
 
   // Handle Drag-Over Image logic
   const handleDragOver = (e: React.DragEvent) => {
