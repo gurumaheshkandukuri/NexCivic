@@ -2,51 +2,52 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
-    // Helper function to fetch the Firestore issue document
-    function getIssueData(complaintId) {
-      return firestore.get(/databases/(default)/documents/issues/$(complaintId)).data;
-    }
-    
-    // Validate if the authenticated user is the assigned inspector
-    function isAssignedInspector(complaintId) {
-      return request.auth != null && 
-             request.auth.uid == getIssueData(complaintId).assignedInspectorUID;
-    }
-    
-    // Validate if the issue is currently in INSPECTION_STARTED status
-    function isInspectionStarted(complaintId) {
-      return getIssueData(complaintId).status == 'Inspection Started';
+    // Helper function to check if path contains path traversal attempts
+    function isSafePath(filename) {
+      return !filename.matches('.*\\.\\..*') && !filename.matches('.*\\/.*');
     }
 
-    // Match all evidence files
+    // Helper function for allowed image content types
+    function isAllowedImageType() {
+      return request.resource.contentType == 'image/jpeg' ||
+             request.resource.contentType == 'image/jpg' ||
+             request.resource.contentType == 'image/png' ||
+             request.resource.contentType == 'image/webp';
+    }
+
+    // Helper function for file size (max 5MB)
+    function isWithinSizeLimit() {
+      return request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024;
+    }
+
+    // Match issue evidence files
     match /issues/{complaintId}/{stage}/{filename} {
-      
-      // Allow reading evidence for anyone authenticated (or public if needed)
       allow read: if request.auth != null;
-      
-      // Allow uploading evidence ONLY if the uploader is the assigned inspector,
-      // the issue is in the correct status, and it is a before or after image.
-      allow write: if (stage == 'before' || stage == 'after') &&
-                      isAssignedInspector(complaintId) &&
-                      isInspectionStarted(complaintId) &&
-                      request.resource.size < 5 * 1024 * 1024 && // 5MB limit
-                      request.resource.contentType.matches('image/(png|jpeg|webp)'); // Exact Image Types
-                      
-      // Deletes of evidence are restricted once uploaded
+      allow write: if request.auth != null &&
+                      isSafePath(filename) &&
+                      isAllowedImageType() &&
+                      isWithinSizeLimit();
       allow delete: if false;
     }
 
-    // Match citizen uploads (no stage subfolder)
+    // Match citizen uploads
     match /issues/{complaintId}/{filename} {
-      // Allow reading evidence for anyone authenticated
       allow read: if request.auth != null;
-
-      // Allow uploading evidence by citizens
-      allow write: if request.auth != null && 
-                      request.resource.size < 5 * 1024 * 1024 && 
-                      request.resource.contentType.matches('image/(png|jpeg|webp)');
-      
+      allow write: if request.auth != null &&
+                      isSafePath(filename) &&
+                      isAllowedImageType() &&
+                      isWithinSizeLimit();
       allow delete: if false;
+    }
+
+    // Match profile pictures
+    match /users/{userId}/{filename} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId &&
+                      isSafePath(filename) &&
+                      isAllowedImageType() &&
+                      isWithinSizeLimit();
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
   }
 }

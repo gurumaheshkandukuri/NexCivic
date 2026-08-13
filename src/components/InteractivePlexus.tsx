@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 
 interface InteractivePlexusProps {
-  theme?: "light" | "dark";
+  className?: string;
 }
 
-export default function InteractivePlexus({ theme = "dark" }: InteractivePlexusProps) {
+export default function InteractivePlexus({ className = "" }: InteractivePlexusProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -69,12 +69,12 @@ export default function InteractivePlexus({ theme = "dark" }: InteractivePlexusP
 
       draw(context: CanvasRenderingContext2D) {
         // Dynamic styling for nodes
-        const isDark = theme === "dark";
+        const isDark = true;
         context.beginPath();
         context.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
         
         // Solid glow colors
-        const fillAlpha = isDark ? "0.85" : "0.55";
+        const fillAlpha = "0.85";
         context.fillStyle = this.hue === 180 
           ? `rgba(6, 182, 212, ${fillAlpha})` // Cyan
           : `rgba(99, 102, 241, ${fillAlpha})`; // Indigo
@@ -102,7 +102,7 @@ export default function InteractivePlexus({ theme = "dark" }: InteractivePlexusP
     }
 
     const drawConnections = (context: CanvasRenderingContext2D) => {
-      const isDark = theme === "dark";
+      const isDark = true;
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
@@ -110,7 +110,7 @@ export default function InteractivePlexus({ theme = "dark" }: InteractivePlexusP
           const dist = Math.sqrt(dx * dx + dy * dy);
 
           if (dist < connectionRadius) {
-            const alpha = (1 - dist / connectionRadius) * (isDark ? 0.16 : 0.11);
+            const alpha = (1 - dist / connectionRadius) * 0.16;
             context.beginPath();
             context.moveTo(particles[i].x, particles[i].y);
             context.lineTo(particles[j].x, particles[j].y);
@@ -123,13 +123,8 @@ export default function InteractivePlexus({ theme = "dark" }: InteractivePlexusP
               particles[j].y
             );
             
-            if (isDark) {
-              grad.addColorStop(0, `rgba(6, 182, 212, ${alpha})`); // Cyan
-              grad.addColorStop(1, `rgba(99, 102, 241, ${alpha * 0.7})`); // Indigo
-            } else {
-              grad.addColorStop(0, `rgba(14, 116, 144, ${alpha})`); // Darker Cyan
-              grad.addColorStop(1, `rgba(67, 56, 202, ${alpha * 0.7})`); // Darker Indigo
-            }
+            grad.addColorStop(0, `rgba(6, 182, 212, ${alpha})`); // Cyan
+            grad.addColorStop(1, `rgba(99, 102, 241, ${alpha * 0.7})`); // Indigo
 
             context.strokeStyle = grad;
             context.lineWidth = (1 - dist / connectionRadius) * 1.1;
@@ -143,7 +138,7 @@ export default function InteractivePlexus({ theme = "dark" }: InteractivePlexusP
       ctx.clearRect(0, 0, width, height);
 
       // Render subtle overlay radial gradient on mouse cursor to act as a volumetric spotlight
-      const isDark = theme === "dark";
+      const isDark = true;
       if (mouse.x > -1000) {
         ctx.save();
         const spotGrad = ctx.createRadialGradient(
@@ -224,7 +219,7 @@ export default function InteractivePlexus({ theme = "dark" }: InteractivePlexusP
         canvas.removeEventListener("mouseleave", handleMouseLeave);
       }
     };
-  }, [theme]);
+  }, []);
 
   return (
     <canvas

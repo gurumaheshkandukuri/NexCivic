@@ -4,6 +4,14 @@ import { auth } from "./firebase-init";
 import { authService } from "./services/authService";
 import { motion } from "framer-motion";
 import { 
+  Home, 
+  MapPin, 
+  PlusCircle, 
+  LayoutDashboard, 
+  User, 
+  LogIn 
+} from "lucide-react";
+import { 
   getUserProfile, 
 } from "./services/userService";
 import { ROLES } from "./constants/roles";
@@ -22,31 +30,67 @@ import AuthPage from "./components/AuthPage";
 import Logo from "./components/Logo";
 import TelanganaDashboard from "./components/TelanganaDashboard";
 import ProfilePage from "./components/ProfilePage";
+import InstallPwaModal from "./components/InstallPwaModal";
+import OfflineBanner from "./components/OfflineBanner";
+import PwaUpdateToast from "./components/PwaUpdateToast";
+import SyncStatus from "./components/SyncStatus";
+import { queueManager } from "./services/queueManager";
+import NotificationPermissionModal from "./components/NotificationPermissionModal";
+import NotificationToast from "./components/NotificationToast";
+import NotificationCenter from "./components/NotificationCenter";
+import { subscribeNotifications, NotificationPayload } from "./services/notificationService";
+import { notificationWorkflow } from "./services/notificationWorkflow";
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
 
   const [activeTab, setActiveTab] = useState<string>("landing");
-  const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string>("");
+
+  // Notification Infrastructure States
+  const [notifications, setNotifications] = useState<NotificationPayload[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [latestNotification, setLatestNotification] = useState<NotificationPayload | null>(null);
+  const [isNotifCenterOpen, setIsNotifCenterOpen] = useState<boolean>(false);
+
+  const isCitizen = (u: UserProfile | null) => u && (u.role === ROLES.CITIZEN || (u.role as string) === "Citizen");
+  const isHQ = (u: UserProfile | null) => u && (u.role === ROLES.MUNICIPALITY_HQ || (u.role as string) === "MunicipalityMgr" || (u.role as string) === "MunicipalityHQ");
 
   const canAccessRoute = (currentUser: UserProfile | null, route: string) => {
     const publicRoutes = ["landing", "map", "telangana", "auth"];
     if (publicRoutes.includes(route)) return true;
     if (!currentUser) return false;
     
-    if (route === "report") return currentUser.role === ROLES.CITIZEN;
+    if (route === "report") return isCitizen(currentUser);
     
-    return true; // Dashboard and Profile render appropriate content per role natively
+    return true;
   };
 
-  // Scroll to top on active tab change to fix navigation scroll continuity
+  // Scroll to top on active tab change
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [activeTab]);
 
+  // Apply permanent Dark theme to DOM, Initialize Offline Queue & Notification Workflow
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", "dark");
+    queueManager.init();
+    notificationWorkflow.init();
+  }, []);
 
+  // Realtime Notifications Subscription
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeNotifications(user.uid, (items, unread) => {
+      setNotifications(items);
+      setUnreadCount(unread);
+      if (items.length > 0) {
+        setLatestNotification(items[0]);
+      }
+    });
+    return () => unsub();
+  }, [user?.uid]);
 
   // Listen to Auth State
   useEffect(() => {
@@ -58,11 +102,7 @@ export default function App() {
           try {
             let profile = await getUserProfile(firebaseUser.uid);
             
-            // Retry logic to fix the Signup Race Condition:
-            // When a new user signs up, Firebase Auth triggers this callback immediately,
-            // BEFORE AuthPage.tsx finishes writing the Firestore profile.
             if (!profile) {
-              // Wait up to 3 seconds for the profile to be created
               for (let i = 0; i < 3; i++) {
                 await new Promise(r => setTimeout(r, 1000));
                 profile = await getUserProfile(firebaseUser.uid);
@@ -99,11 +139,6 @@ export default function App() {
     initializeUser();
   }, []);
 
-  // Apply visual theme to DOM
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
-
   // Handle initial route from URL hash
   useEffect(() => {
     const hash = window.location.hash.replace("#", "");
@@ -112,7 +147,7 @@ export default function App() {
     }
   }, []);
 
-  // Role-Based Route Guard
+  // Role-Based Guard
   useEffect(() => {
     if (!loading) {
       if (!canAccessRoute(user, activeTab)) {
@@ -121,12 +156,10 @@ export default function App() {
     }
   }, [user, activeTab, loading]);
 
-  // Update URL hash when activeTab changes
   useEffect(() => {
     window.location.hash = activeTab;
   }, [activeTab]);
 
-  // Handle browser back/forward navigation
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace("#", "");
@@ -134,19 +167,12 @@ export default function App() {
     };
 
     window.addEventListener("hashchange", handleHashChange);
-
     return () => {
       window.removeEventListener("hashchange", handleHashChange);
     };
   }, []);
 
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  };
-
-  const handleRefresh = async () => {
-    // No-op. Live updates are fully managed by real-time Firestore subscriptions.
-  };
+  const handleRefresh = async () => {};
 
   if (loading) {
     return (
@@ -162,7 +188,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg-void)] text-[var(--text-1)] select-none transition-all duration-300 relative overflow-x-hidden">
+    <div className="min-h-screen flex flex-col bg-[var(--bg-void)] text-[var(--text-1)] select-none transition-all duration-300 relative overflow-x-hidden w-full max-w-[100vw]">
       
       {/* Global Animated Floating Background Orbs for a 3D Atmosphere */}
       <div className="bg-orb-purple top-[8%] -left-36 opacity-35" />
@@ -170,18 +196,16 @@ export default function App() {
       <div className="bg-orb-purple bottom-[32%] -left-24 opacity-25" />
       <div className="bg-orb-cyan bottom-[8%] -right-24 opacity-30" />
 
-      {/* Universal header Nav bar */}
+      {/* Universal Header Nav bar */}
       <Navbar 
         user={user} 
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
-        theme={theme} 
-        toggleTheme={toggleTheme}
         onOpenNotification={() => {}}
       />
 
       {/* Main active route renders */}
-      <main className="relative z-10 pt-20">
+      <main className="relative z-10 pt-16 md:pt-20 pb-20 md:pb-0 flex-1 w-full max-w-[100vw] overflow-x-hidden">
         
         {activeTab === "landing" && (
           <div className="animate-fadeIn">
@@ -189,7 +213,6 @@ export default function App() {
               users={[]} 
               setActiveTab={setActiveTab} 
               user={user} 
-              theme={theme}
             />
             <AboutSection />
           </div>
@@ -199,7 +222,6 @@ export default function App() {
           <div className="animate-fadeIn">
             <MapExplorer 
               user={user} 
-              
             />
           </div>
         )}
@@ -210,10 +232,10 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === "report" && user && user.role === ROLES.CITIZEN && (
+        {activeTab === "report" && isCitizen(user) && (
           <div className="animate-fadeIn">
             <ReportIssue 
-              user={user} 
+              user={user!} 
               onSuccess={handleRefresh} 
               setActiveTab={setActiveTab} 
             />
@@ -223,23 +245,21 @@ export default function App() {
         {activeTab === "dashboard" && (
           <div className="animate-fadeIn">
             {user ? (
-              user.role === ROLES.CITIZEN ? (
+              isCitizen(user) ? (
                 <CitizenDashboard 
                   user={user} 
                 />
-              ) : user.role === ROLES.MUNICIPALITY_HQ ? (
+              ) : isHQ(user) ? (
                 <MunicipalityMgrDashboard 
                   user={user} 
-                  
                 />
               ) : (
                 <AdminPanel 
                   user={user} 
-                  
                 />
               )
             ) : (
-              <AuthPage onSuccess={handleRefresh} theme={theme} />
+              <AuthPage onSuccess={handleRefresh} />
             )}
           </div>
         )}
@@ -248,74 +268,164 @@ export default function App() {
           <div className="animate-fadeIn">
             <ProfilePage 
               user={user} 
-              theme={theme} 
             />
           </div>
         )}
 
         {activeTab === "auth" && (
           <div className="animate-fadeIn">
-            <AuthPage onSuccess={() => setActiveTab("dashboard")} theme={theme} globalError={authError} />
+            <AuthPage onSuccess={() => setActiveTab("dashboard")} globalError={authError} />
           </div>
         )}
 
       </main>
 
-      {/* Official Re-Architected Premium Glassmorphic Scroll-Reveal Footer */}
-      {!loading && 
+      {/* MOBILE BOTTOM NAVIGATION BAR (<768px) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-slate-950/90 backdrop-blur-xl border-t border-slate-800/80 px-2 py-1.5 pb-safe shadow-[0_-10px_25px_rgba(0,0,0,0.5)]">
+        <div className="flex items-center justify-around max-w-md mx-auto">
+          
+          <button
+            onClick={() => setActiveTab("landing")}
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl touch-target transition-all ${
+              activeTab === "landing"
+                ? "text-indigo-400 font-bold bg-indigo-500/10"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Home className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Home</span>
+          </button>
+
+          {user && isCitizen(user) && (
+            <button
+              onClick={() => setActiveTab("report")}
+              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl touch-target transition-all ${
+                activeTab === "report"
+                  ? "text-indigo-400 font-bold bg-indigo-500/10"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <PlusCircle className="w-5 h-5 mb-0.5" />
+              <span className="text-[10px] tracking-tight">Report</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setActiveTab("map")}
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl touch-target transition-all ${
+              activeTab === "map"
+                ? "text-indigo-400 font-bold bg-indigo-500/10"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <MapPin className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Map</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab(user ? "dashboard" : "auth")}
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl touch-target transition-all ${
+              activeTab === "dashboard" || activeTab === "auth"
+                ? "text-indigo-400 font-bold bg-indigo-500/10"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <LayoutDashboard className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Terminal</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab(user ? "profile" : "auth")}
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl touch-target transition-all ${
+              activeTab === "profile"
+                ? "text-indigo-400 font-bold bg-indigo-500/10"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {user ? <User className="w-5 h-5 mb-0.5" /> : <LogIn className="w-5 h-5 mb-0.5" />}
+            <span className="text-[10px] tracking-tight">{user ? "Profile" : "Sign In"}</span>
+          </button>
+
+        </div>
+      </nav>
+
+      {/* Official Scroll-Reveal Footer */}
+      {!loading && (
         <motion.footer 
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
-            className="border-t border-slate-200/30 dark:border-white/10 bg-slate-100/60 dark:bg-[#0b0f19]/75 backdrop-blur-xl py-16 px-6 md:px-12 mt-20 relative z-10 glass"
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="border-t border-white/10 bg-[#0b0f19]/75 backdrop-blur-xl py-12 px-4 md:px-12 mt-auto relative z-10 glass hidden md:block"
         >
-            <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-10 items-start">
-            
-            {/* Brand block (Span 5) */}
-            <div className="md:col-span-5 flex flex-col gap-4 text-center md:text-left">
-                <div className="flex justify-center md:justify-start">
-                <Logo size="md" themeType={theme} />
-                </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 max-w-sm leading-relaxed font-sans font-medium">
+          <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+            <div className="md:col-span-5 flex flex-col gap-3 text-center md:text-left">
+              <div className="flex justify-center md:justify-start">
+                <Logo size="md" />
+              </div>
+              <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed font-sans font-medium">
                 NexCivic is the next-generation metropolitan smart coordinate telemetry and semantic report clustering protocol. Fostering resilient, transparent, and responsive urban infrastructure.
-                </p>
-                <div className="flex items-center justify-center md:justify-start gap-2 mt-2">
+              </p>
+              <div className="flex items-center justify-center md:justify-start gap-2 mt-1">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[9px] font-mono tracking-widest font-bold text-slate-500 dark:text-slate-400 uppercase">WARD ALLOCATED NODE v2.4</span>
-                </div>
+                <span className="text-[9px] font-mono tracking-widest font-bold text-slate-400 uppercase">WARD ALLOCATED NODE v2.4</span>
+              </div>
             </div>
 
-            {/* Quick Navigation grid (Span 4) */}
-            <div className="md:col-span-4 flex flex-col gap-4 text-center md:text-left">
-                <span className="text-[10px] font-mono uppercase font-black text-slate-500 dark:text-slate-450 tracking-wider">Smart Layers</span>
-                <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 text-xs font-semibold text-slate-600 dark:text-slate-400">
-                <button onClick={() => setActiveTab("landing")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">About Paradigm</button>
-                <button onClick={() => setActiveTab("map")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Smart Map</button>
-                <button onClick={() => setActiveTab("telangana")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Telangana Desk</button>
-                <button onClick={() => setActiveTab("dashboard")} className="hover:text-cyan-600 dark:hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Staff Terminal</button>
-                <span className="cursor-not-allowed text-center md:text-left opacity-50">Water supply lines</span>
-                <span className="cursor-not-allowed text-center md:text-left opacity-50 font-normal">Thermal Heatmap</span>
-                </div>
+            <div className="md:col-span-4 flex flex-col gap-3 text-center md:text-left">
+              <span className="text-[10px] font-mono uppercase font-black text-slate-400 tracking-wider">Smart Layers</span>
+              <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs font-semibold text-slate-400">
+                <button onClick={() => setActiveTab("landing")} className="hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">About Paradigm</button>
+                <button onClick={() => setActiveTab("map")} className="hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Smart Map</button>
+                <button onClick={() => setActiveTab("telangana")} className="hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Telangana Desk</button>
+                <button onClick={() => setActiveTab("dashboard")} className="hover:text-[var(--cyan)] transition-colors cursor-pointer text-center md:text-left">Staff Terminal</button>
+              </div>
             </div>
 
-            {/* Security details & Municipalities (Span 3) */}
-            <div className="md:col-span-3 flex flex-col gap-4 items-center md:items-end text-center md:text-right">
-                <div className="flex flex-col gap-1 font-mono text-[9px] text-slate-500 dark:text-slate-400">
-                <span className="font-extrabold tracking-wider uppercase text-slate-500 dark:text-slate-300">© 2026 NEXCIVIC SYSTEMS</span>
+            <div className="md:col-span-3 flex flex-col gap-3 items-center md:items-end text-center md:text-right">
+              <div className="flex flex-col gap-1 font-mono text-[9px] text-slate-400">
+                <span className="font-extrabold tracking-wider uppercase text-slate-300">© 2026 NEXCIVIC SYSTEMS</span>
                 <span>ALL RIGHTS RESERVED GLOBALLY</span>
-                </div>
-                
-                <div className="flex items-center gap-1.5 p-2 rounded-xl bg-cyan-500/5 dark:bg-cyan-400/5 border border-cyan-500/10 dark:border-cyan-400/10 text-[9px] font-mono text-cyan-600 dark:text-cyan-400">
+              </div>
+              
+              <div className="flex items-center gap-1.5 p-2 rounded-xl bg-cyan-400/5 border border-cyan-400/10 text-[9px] font-mono text-cyan-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                 <span>SECURED BY FIRESTORE DIRECT</span>
-                </div>
+              </div>
             </div>
-
-            </div>
+          </div>
         </motion.footer>
-        }
+      )}
 
+      {/* Floating Connectivity Banner */}
+      <OfflineBanner />
+
+      {/* PWA Custom Premium Install Modal Prompt */}
+      <InstallPwaModal activeTab={activeTab} />
+
+      {/* PWA Version Update Toast */}
+      <PwaUpdateToast />
+
+      {/* Offline Queue Sync Status Widget */}
+      <SyncStatus />
+
+      {/* Notification Permission Modal (30s delay) */}
+      <NotificationPermissionModal activeTab={activeTab} />
+
+      {/* Foreground Notification Toast */}
+      <NotificationToast 
+        latestNotification={latestNotification} 
+        onOpenCenter={() => setIsNotifCenterOpen(true)} 
+      />
+
+      {/* Notification Center Drawer */}
+      <NotificationCenter 
+        isOpen={isNotifCenterOpen} 
+        onClose={() => setIsNotifCenterOpen(false)} 
+        notifications={notifications} 
+        unreadCount={unreadCount} 
+        userUID={user?.uid || ""} 
+      />
     </div>
   );
 }

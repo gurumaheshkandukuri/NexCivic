@@ -24,7 +24,6 @@ import {
 
 interface AuthPageProps {
   onSuccess: () => void;
-  theme?: "light" | "dark";
   globalError?: string;
 }
 
@@ -32,7 +31,7 @@ import { states, locationData } from "../constants/locations";
 import { ROLES, RoleType } from "../constants/roles";
 import { createUserProfile } from "../services/userService";
 
-export default function AuthPage({ onSuccess, theme = "dark", globalError }: AuthPageProps) {
+export default function AuthPage({ onSuccess, globalError }: AuthPageProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -125,7 +124,7 @@ export default function AuthPage({ onSuccess, theme = "dark", globalError }: Aut
         <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--cyan)]/5 rounded-full filter blur-2xl -z-10" />
 
         <div className="text-center flex flex-col items-center gap-4">
-          <Logo size="lg" className="mx-auto" themeType={theme} />
+          <Logo size="lg" className="mx-auto" />
           <div>
             <h2 className="font-display font-extrabold text-2xl text-[var(--text-1)]">
               {isLogin ? "Sign In to NexCivic" : "Create administrative account"}

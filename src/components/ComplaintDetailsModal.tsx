@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
+import { getStatusBadgeClass } from '../constants/status';
 import { Issue, UserProfile } from '../types';
 import { addCommentToIssue, submitIssueRating } from '../services/issueService';
 import { Clock, MessageSquare, Tag, MapPin } from 'lucide-react';
-import jsPDF from 'jspdf';
-import * as htmlToImage from 'html-to-image';
+import { generateCitizenResolutionReport, generateResolutionCertificate, generateMunicipalityHQReport } from '../utils/pdfGenerator';
+import { ROLES } from '../constants/roles';
 
 interface ComplaintDetailsModalProps {
   issue: Issue;
@@ -53,70 +54,73 @@ export default function ComplaintDetailsModal({ issue, user, onClose, onRefresh 
   const handleDownloadResolutionReport = async () => {
     setIsDownloading(true);
     try {
-      const modalContent = document.getElementById('resolution-report-content');
-      if (!modalContent) return;
-      
-      const imgData = await htmlToImage.toPng(modalContent, { pixelRatio: 2 });
-      
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      
-      // Calculate aspect ratio. We need original dimensions for this.
-      // html-to-image maintains the DOM element's aspect ratio.
-      const rect = modalContent.getBoundingClientRect();
-      const pdfHeight = (rect.height * pdfWidth) / rect.width;
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Resolution_Report_${issue.complaintId}.pdf`);
+      if (user?.role === ROLES.MUNICIPALITY_HQ) {
+        await generateMunicipalityHQReport(issue, user);
+      } else if (user?.role === ROLES.FIELD_INSPECTOR) {
+        await generateResolutionCertificate(issue, user);
+      } else {
+        await generateCitizenResolutionReport(issue, user);
+      }
     } catch (error) {
       console.error("Failed to generate PDF report", error);
-      alert("Failed to generate PDF. Please ensure all images have finished loading.");
+      alert("Failed to generate PDF. Please try again.");
     } finally {
       setIsDownloading(false);
     }
   };
 
-  const locationText = [issue.landmark, issue.area, issue.ulb, issue.district].filter(Boolean).join(', ');
+  const locationText = [issue.landmark, issue.area, issue.ulb, issue.district, issue.state].filter(Boolean).join(', ');
 
   return (
-    <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 overflow-hidden" onClick={onClose}>
       <div 
-        className="glass max-w-2xl w-full bg-slate-900 rounded-3xl p-6 border border-slate-700 max-h-[90vh] overflow-y-auto flex flex-col gap-5 text-left relative"
+        className="glass max-w-2xl w-full bg-slate-900 rounded-3xl border border-slate-700 max-h-[90vh] flex flex-col text-left relative overflow-hidden shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         id="resolution-report-content"
       >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-lg text-gray-400 hover:text-white hover:bg-[rgba(255,255,255,0.03)] transition-all z-10"
-        >
-          X
-        </button>
+        {/* Fixed Header */}
+        <div className="p-6 pb-4 border-b border-slate-800 flex items-start justify-between gap-4 shrink-0 bg-slate-900/90 backdrop-blur-md">
+          <div className="flex-1 min-w-0 pr-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 font-mono flex items-center gap-2 flex-wrap">
+              <span>{issue.category || "General Incident"}</span>
+              <span>•</span>
+              <span>Priority: {issue.priority || "Medium"}</span>
+              <span>•</span>
+              <span>Reference: #{issue.complaintId}</span>
+            </span>
+            <h3 className="font-display font-extrabold text-xl md:text-2xl text-white mt-1 truncate">
+              {issue.title}
+            </h3>
+            <div className="flex items-center gap-2 mt-2 text-xs text-gray-400 flex-wrap">
+              <div className="flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
+                <span className="truncate">{locationText}</span>
+              </div>
+              <span className={getStatusBadgeClass(issue.status as string)}>{issue.status}</span>
+              <span>•</span>
+              <span className="text-cyan-400 font-bold">+{issue.communitySupportCount || 0} Confirmations</span>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-slate-800 transition-all shrink-0 font-bold text-lg leading-none"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
 
-        <div>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 font-mono flex items-center gap-2 flex-wrap">
-            <span>{issue.category || "General Incident"}</span>
-            <span>•</span>
-            <span>Priority: {issue.priority || "Medium"}</span>
-            <span>•</span>
-            <span>Reference: #{issue.complaintId}</span>
-          </span>
-          <h3 className="font-display font-extrabold text-xl md:text-2xl text-white mt-1">
-            {issue.title}
-          </h3>
-          <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+        {/* Scrollable Body */}
+        <div className="p-6 flex-1 min-h-0 overflow-y-auto flex flex-col gap-5">
+          <p className="text-xs text-gray-300 leading-relaxed bg-slate-800/40 p-3 rounded-xl border border-slate-800/60 italic">
             "{issue.description}"
           </p>
-          <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
-            <MapPin className="w-3 h-3" />
-            <span>{locationText}</span>
-          </div>
-          <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
-            <Tag className="w-3 h-3" />
-            <span>Status: {issue.status}</span>
-            <span>•</span>
-            <span className="text-cyan-400 font-bold">+{issue.communitySupportCount || 0} Confirmations</span>
-          </div>
-        </div>
+          {(issue.latitude || issue.longitude) && (
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <MapPin className="w-3 h-3 text-cyan-400" />
+              <span>Coordinates: {issue.latitude}, {issue.longitude}</span>
+            </div>
+          )}
 
         {(issue.imageUrl || issue.imageData) && (
           <div className="text-left mt-2">
@@ -206,10 +210,21 @@ export default function ComplaintDetailsModal({ issue, user, onClose, onRefresh 
              <div className="text-left">
                <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Administrative Proof (Before/After)</span>
                <div className="flex flex-col gap-2">
-                 {(issue.inspectionImages && issue.inspectionImages.length > 0) ? (
-                   issue.inspectionImages.map((img: string, idx: number) => (
-                     <img key={idx} src={img} className="w-full h-32 object-cover rounded-xl border border-gray-700" crossOrigin={getCrossOrigin(img)} />
-                   ))
+                 {((issue.inspectionImages && issue.inspectionImages.length > 0) || (issue.resolutionImages && issue.resolutionImages.length > 0)) ? (
+                   <>
+                     {issue.inspectionImages?.map((img: string, idx: number) => (
+                       <div key={`before-${idx}`} className="relative">
+                         <span className="absolute top-2 left-2 bg-black/70 text-white text-[10px] px-2 py-1 rounded font-bold">Before</span>
+                         <img src={img} className="w-full h-32 object-cover rounded-xl border border-gray-700" crossOrigin={getCrossOrigin(img)} />
+                       </div>
+                     ))}
+                     {issue.resolutionImages?.map((img: string, idx: number) => (
+                       <div key={`after-${idx}`} className="relative">
+                         <span className="absolute top-2 left-2 bg-green-500/90 text-white text-[10px] px-2 py-1 rounded font-bold">After</span>
+                         <img src={img} className="w-full h-32 object-cover rounded-xl border border-gray-700" crossOrigin={getCrossOrigin(img)} />
+                       </div>
+                     ))}
+                   </>
                  ) : (
                     <div className="w-full h-32 bg-gray-800 rounded-xl flex items-center justify-center text-xs text-gray-500">No proof photos provided</div>
                  )}
@@ -286,6 +301,7 @@ export default function ComplaintDetailsModal({ issue, user, onClose, onRefresh 
           </div>
         )}
 
+        </div>
       </div>
     </div>
   );

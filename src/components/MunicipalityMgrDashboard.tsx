@@ -43,22 +43,10 @@ import {
   createImportBatch,
   deleteImportBatchCascade
 } from "../services/adminService";
-import { generateResolutionCertificate } from "../utils/pdfGenerator";
+import { generateMunicipalityHQReport } from "../utils/pdfGenerator";
 import { generateHQAnalytics } from "../utils/analytics/hqAnalytics";
-import { 
-  ResponsiveContainer, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  PieChart, 
-  Pie, 
-  Cell, 
-  AreaChart, 
-  Area,
-  Legend
-} from "recharts";
+import { Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Legend, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
+import { getStatusBadgeClass } from '../constants/status';
 import { useLiveIssues } from "../hooks/useLiveIssues";
 import { useLiveAnalytics } from "../hooks/useLiveAnalytics";
 
@@ -682,7 +670,8 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
           </div>
 
           <div className="bg-slate-900/35 border border-white/5 rounded-3xl overflow-hidden glass shadow-2xl">
-            <div className="overflow-x-auto">
+            {/* Desktop & Tablet Table Layout (>=768px) */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-xs text-left">
                 <thead>
                   <tr className="border-b border-gray-800 bg-slate-950/45 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
@@ -699,8 +688,11 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
                 <tbody className="divide-y divide-gray-850">
                   {filteredIssues.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-gray-500 font-medium">
-                        No active incident reports match the chosen filters.
+                      <td colSpan={8} className="py-12 text-center text-gray-500 text-sm">
+                        <div className="flex flex-col items-center justify-center">
+                          <span className="text-2xl mb-2">📋</span>
+                          <p>No active incident reports match the chosen filters.</p>
+                        </div>
                       </td>
                     </tr>
                   ) : (
@@ -740,7 +732,6 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
                           <td className="p-4" onClick={() => setSelectedIssue(issue)}>
                             <div className="flex flex-col">
                               <span className="font-semibold text-gray-300">{issue.reportedByName}</span>
-                              <span className="text-[9px] font-mono text-gray-550">{""}</span>
                             </div>
                           </td>
                           <td className="p-4" onClick={() => setSelectedIssue(issue)}>
@@ -754,11 +745,7 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
                             </div>
                           </td>
                           <td className="p-4 text-center" onClick={() => setSelectedIssue(issue)}>
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold tracking-wider uppercase border ${
-                              issue.status === STATUS.RESOLVED ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                              issue.status === STATUS.IN_PROGRESS ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
-                              "bg-[var(--cyan)]/10 text-[var(--cyan)] border-[var(--cyan)]/20"
-                            }`}>
+                            <span className={getStatusBadgeClass(issue.status as string)}>
                               {issue.status}
                             </span>
                           </td>
@@ -770,9 +757,9 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
                                 setAssignedDept(issue.category || "");
                                 setAssignedOfficer(issue.assignedInspectorName || "");
                               }}
-                              className="px-3 py-1 bg-[var(--cyan)] hover:scale-103 transition-transform text-slate-950 font-extrabold text-[10px] rounded-lg cursor-pointer"
+                              className="px-3 py-1 bg-[var(--cyan)] hover:scale-103 transition-transform text-slate-950 font-extrabold text-[10px] rounded-lg cursor-pointer touch-target"
                             >
-                              Dispatch HQ
+                              Dispatch →
                             </button>
                           </td>
                         </tr>
@@ -781,6 +768,68 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Stacked Cards Layout (<768px) */}
+            <div className="md:hidden flex flex-col gap-3 p-3">
+              {filteredIssues.length === 0 ? (
+                <div className="py-12 text-center text-gray-500 text-sm">
+                  <span className="text-2xl mb-2 block">📋</span>
+                  <p>No active incident reports match the chosen filters.</p>
+                </div>
+              ) : (
+                filteredIssues.map((issue) => (
+                  <div 
+                    key={issue.complaintId} 
+                    className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-3 text-left shadow-lg"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-100">{issue.title}</h4>
+                        <span className="text-[9px] font-mono text-slate-400 block mt-0.5">📍 {issue.landmark}</span>
+                      </div>
+                      <span className={getStatusBadgeClass(issue.status as string)}>{issue.status}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs py-2 border-y border-slate-800/80">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Category</span>
+                        <span className="text-indigo-400 font-semibold">{issue.category}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Location</span>
+                        <span className="text-slate-300 font-medium">{issue.ulb || issue.district || "N/A"}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Priority</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold inline-block mt-0.5 ${
+                          issue.priority === PRIORITIES.CRITICAL ? "text-red-400 bg-red-500/10" :
+                          issue.priority === PRIORITIES.HIGH ? "text-orange-400 bg-orange-500/10" :
+                          "text-emerald-400 bg-emerald-500/10"
+                        }`}>
+                          {issue.priority}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Assigned Officer</span>
+                        <span className="text-slate-300 font-medium">{issue.assignedInspectorName || "⚠️ Unassigned"}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setSelectedIssue(issue);
+                        setStatusInput(issue.status);
+                        setAssignedDept(issue.category || "");
+                        setAssignedOfficer(issue.assignedInspectorName || "");
+                      }}
+                      className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold cursor-pointer text-xs touch-target flex items-center justify-center gap-1.5 shadow-md"
+                    >
+                      Manage & Dispatch →
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -871,7 +920,16 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
                         <span>•</span>
                         <span>Quantity: <strong>{batch.rowCount} Rows</strong></span>
                         <span>•</span>
-                        <span>Committed: <strong>{new Date(batch.createdAt).toLocaleString()}</strong></span>
+                        <span>Committed: <strong>{
+                          (() => {
+                            const ts = batch.createdAt;
+                            if (!ts) return "N/A";
+                            if (typeof ts === "string") return new Date(ts).toLocaleString();
+                            if (ts.toDate && typeof ts.toDate === "function") return ts.toDate().toLocaleString();
+                            if (ts.seconds) return new Date(ts.seconds * 1000).toLocaleString();
+                            return new Date(ts).toLocaleString();
+                          })()
+                        }</strong></span>
                       </div>
                     </div>
                     <button
@@ -970,38 +1028,68 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
 
       {/* DISPATCH HQ MODAL PANEL */}
       {selectedIssue && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="glass max-w-xl w-full rounded-2xl p-6 border border-white/10 animate-zoomIn flex flex-col gap-4 text-left relative overflow-hidden bg-slate-950">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 overflow-hidden">
+          <div className="glass max-w-xl w-full rounded-2xl border border-white/10 animate-zoomIn flex flex-col max-h-[90vh] text-left relative overflow-hidden bg-slate-950 shadow-2xl">
             
-            <div className="flex justify-between items-center border-b border-gray-800 pb-3">
+            {/* Fixed Header */}
+            <div className="p-6 pb-3 flex justify-between items-center border-b border-gray-800 shrink-0 bg-slate-950">
               <span className="text-[10px] uppercase font-mono tracking-widest font-extrabold text-[var(--cyan)] flex items-center gap-1.5">
                 <Wrench className="w-4 h-4 animate-spin text-[var(--cyan)]" /> DISPATCH & RESOLVE CONSOLE
               </span>
               <button 
                 onClick={() => setSelectedIssue(null)}
-                className="text-xs text-gray-500 hover:text-white"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-slate-900 transition-all font-bold text-xs"
               >
                 ✕ Close
               </button>
             </div>
 
-            <div className="space-y-4">
+            {/* Scrollable Body */}
+            <div className="p-6 flex-1 min-h-0 overflow-y-auto space-y-4">
               <div>
                 <h4 className="font-sans font-black text-sm text-[var(--text-1)]">{selectedIssue.title}</h4>
                 <p className="text-[11px] text-gray-400 font-sans leading-relaxed mt-1">{selectedIssue.description}</p>
                 <div className="grid grid-cols-2 gap-2 mt-2 font-mono text-[9px] text-gray-400">
                   <span>📍 Area: <strong>{selectedIssue.address}</strong></span>
-                  <span>📅 Reported: <strong>{new Date(selectedIssue.createdAt).toLocaleDateString()}</strong></span>
+                  <span>📅 Reported: <strong>{
+                    (() => {
+                      const ts = selectedIssue.createdAt;
+                      if (!ts) return "N/A";
+                      if (typeof ts === "string") return new Date(ts).toLocaleDateString();
+                      if (ts.toDate && typeof ts.toDate === "function") return ts.toDate().toLocaleDateString();
+                      if (ts.seconds) return new Date(ts.seconds * 1000).toLocaleDateString();
+                      return new Date(ts).toLocaleDateString();
+                    })()
+                  }</strong></span>
                   <span>👤 Reporter: <strong>{selectedIssue.reporterName}</strong></span>
                   <span>📡 Category: <strong>{selectedIssue.category}</strong></span>
                 </div>
               </div>
 
-              {(selectedIssue.imageUrl || selectedIssue.imageData) && (
-                <div className="w-full h-32 rounded-lg overflow-hidden border border-gray-800">
-                  <img src={selectedIssue.imageUrl || selectedIssue.imageData || ""} className="w-full h-full object-cover" />
-                </div>
-              )}
+              <div className="flex flex-col gap-2">
+                {/* 1. Original Reporter Evidence */}
+                {(selectedIssue.imageUrl || selectedIssue.imageData) && (
+                  <div className="w-full h-32 rounded-lg overflow-hidden border border-gray-800 relative">
+                    <span className="absolute top-2 left-2 bg-black/70 text-white text-[10px] px-2 py-1 rounded font-bold">Reporter Evidence</span>
+                    <img src={selectedIssue.imageUrl || selectedIssue.imageData || ""} className="w-full h-full object-cover" />
+                  </div>
+                )}
+                
+                {/* 2. Inspector Evidence (Before/After) */}
+                {selectedIssue.inspectionImages?.map((img: string, idx: number) => (
+                  <div key={`before-${idx}`} className="w-full h-32 rounded-lg overflow-hidden border border-gray-800 relative">
+                    <span className="absolute top-2 left-2 bg-black/70 text-white text-[10px] px-2 py-1 rounded font-bold">Inspector (Before)</span>
+                    <img src={img} className="w-full h-full object-cover" />
+                  </div>
+                ))}
+                
+                {selectedIssue.resolutionImages?.map((img: string, idx: number) => (
+                  <div key={`after-${idx}`} className="w-full h-32 rounded-lg overflow-hidden border border-gray-800 relative">
+                    <span className="absolute top-2 left-2 bg-green-500/90 text-white text-[10px] px-2 py-1 rounded font-bold">Inspector (After)</span>
+                    <img src={img} className="w-full h-full object-cover" />
+                  </div>
+                ))}
+              </div>
 
               {/* Inspection Notes Block */}
               {(selectedIssue.workCompleted || selectedIssue.materialsUsed || selectedIssue.estimatedCost || selectedIssue.timeSpent || selectedIssue.inspectionRemarks) && (
@@ -1150,7 +1238,7 @@ export default function MunicipalityMgrDashboard({ user }: MunicipalityMgrDashbo
               {selectedIssue.status === STATUS.RESOLVED && (
                 <div className="mt-4 pt-4 border-t border-gray-800">
                   <button
-                    onClick={() => generateResolutionCertificate(selectedIssue, user)}
+                    onClick={() => generateMunicipalityHQReport(selectedIssue, user)}
                     className="w-full py-3 bg-[var(--cyan)]/20 text-[var(--cyan)] font-bold rounded-xl text-xs hover:bg-[var(--cyan)]/30 transition-colors flex items-center justify-center gap-2 shadow-lg"
                   >
                     <Download className="w-4 h-4" /> Download Resolution Report (PDF)

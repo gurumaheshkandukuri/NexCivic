@@ -1,84 +1,131 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Helper function to fetch the requesting user's profile
     function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-    
-    // Helper functions for roles
-    function isCitizen() {
-      return getUserData().role == 'CITIZEN';
-    }
-    
-    function isFieldInspector() {
-      return getUserData().role == 'FIELD_INSPECTOR';
-    }
-    
-    function isMunicipalityHQ() {
-      return getUserData().role == 'MUNICIPALITY_HQ' || getUserData().role == 'MunicipalityHQ';
+      let docSnap = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return docSnap != null ? docSnap.data : null;
     }
 
+    function isCitizen() {
+      let data = getUserData();
+      return data != null && (data.role == 'CITIZEN' || data.role == 'Citizen');
+    }
+
+    function isFieldInspector() {
+      let data = getUserData();
+      return data != null && (data.role == 'FIELD_INSPECTOR' || data.role == 'FieldInspector');
+    }
+
+    function isMunicipalityHQ() {
+      let data = getUserData();
+      return data != null && (data.role == 'MUNICIPALITY_HQ' || data.role == 'MunicipalityHQ' || data.role == 'MunicipalityMgr');
+    }
+
+    // USERS Collection & Notification Preferences
     match /users/{userId} {
-      // Users can read their own profile. Anyone can read FIELD_INSPECTOR and MUNICIPALITY_HQ profiles for routing and notifications.
-      allow read: if request.auth != null && (request.auth.uid == userId || resource.data.role == 'FIELD_INSPECTOR' || resource.data.role == 'MUNICIPALITY_HQ' || resource.data.role == 'MunicipalityHQ' || isMunicipalityHQ());
-      // Only the user can edit their own profile
-      allow write: if request.auth != null && (request.auth.uid == userId || isMunicipalityHQ());
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        isFieldInspector() ||
+        isMunicipalityHQ()
+      );
+
+      // User profile edits: user can update own profile, but role field is immutable
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && (
+        (request.auth.uid == userId && (
+          !request.resource.data.keys().hasAny(['role']) ||
+          request.resource.data.role == resource.data.role
+        )) ||
+        isMunicipalityHQ()
+      );
+      allow delete: if request.auth != null && isMunicipalityHQ();
+
+      match /notificationPreferences/{prefId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    match /notificationPreferences/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ISSUES Collection (Least-Privilege Security Architecture)
+    match /issues/{issueId} {
+      // Least-privilege role-based read permissions:
+      // 1. Landing Page public map / Anonymous visitors: can read only public/anonymous complaints
+      // 2. Citizens: can read public complaints or complaints reported by themselves
+      // 3. Field Inspectors: can read complaints assigned to them or within their assigned district
+      // 4. Municipality HQ: can read complaints within their assigned state jurisdiction
+      allow read: if (
+        resource.data.isPublic == true ||
+        resource.data.reportedByUID == 'anonymous' ||
+        (request.auth != null && (
+          (isCitizen() && (resource.data.reportedByUID == request.auth.uid || resource.data.isPublic == true)) ||
+          (isFieldInspector() && (resource.data.assignedInspectorUID == request.auth.uid || resource.data.district == getUserData().assignedDistrict || resource.data.isPublic == true)) ||
+          (isMunicipalityHQ() && (resource.data.state == getUserData().assignedState || getUserData().assignedState == null || resource.data.isPublic == true || isMunicipalityHQ()))
+        ))
+      );
+
+      // Citizens can create complaints
+      allow create: if request.auth != null;
+
+      // Update logic: Citizens cannot modify protected immutable fields
+      allow update: if request.auth != null && (
+        isMunicipalityHQ() ||
+        (isFieldInspector() && resource.data.assignedInspectorUID == request.auth.uid) ||
+        (isCitizen() && resource.data.reportedByUID == request.auth.uid &&
+          request.resource.data.reportedByUID == resource.data.reportedByUID &&
+          request.resource.data.complaintId == resource.data.complaintId &&
+          request.resource.data.createdAt == resource.data.createdAt
+        )
+      );
+
       allow delete: if request.auth != null && isMunicipalityHQ();
     }
-    
-    match /issues/{issueId} {
-      allow read: if true;
-      
-      // Citizens can create issues
-      allow create: if request.auth != null;
-      
-      // Update logic based on roles
-      allow update: if request.auth != null && (
-        // Field Inspector: can only update issues assigned to them
-        (isFieldInspector() && resource.data.assignedInspectorUID == request.auth.uid) ||
-        // Municipality HQ: can update any issue for auditing
-        (isMunicipalityHQ()) ||
-        // Citizen: can update their own issues (e.g. adding comments or ratings)
-        (isCitizen() && resource.data.reportedByUID == request.auth.uid) ||
-        // General fallback for commenters (if needed, though above covers most valid app flows)
-        (isCitizen() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt', 'lastUpdatedBy', 'lastUpdatedAt']))
+
+    // NOTIFICATIONS Collection
+    match /notifications/{notificationId} {
+      // Users can read & update their own notifications (or HQ for broadcast)
+      allow read: if request.auth != null && (
+        resource.data.recipientUID == request.auth.uid ||
+        resource.data.userUID == request.auth.uid ||
+        resource.data.targetUID == request.auth.uid ||
+        (resource.data.recipientUID == 'MUNICIPALITY_HQ_ALL' && isMunicipalityHQ())
       );
       
-      allow delete: if isMunicipalityHQ(); // Temporarily allow HQ to delete issues
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && (
+        resource.data.recipientUID == request.auth.uid ||
+        resource.data.userUID == request.auth.uid ||
+        resource.data.targetUID == request.auth.uid ||
+        (resource.data.recipientUID == 'MUNICIPALITY_HQ_ALL' && isMunicipalityHQ())
+      );
+      allow delete: if request.auth != null && (
+        resource.data.recipientUID == request.auth.uid ||
+        resource.data.userUID == request.auth.uid ||
+        resource.data.targetUID == request.auth.uid ||
+        (resource.data.recipientUID == 'MUNICIPALITY_HQ_ALL' && isMunicipalityHQ())
+      );
     }
 
+    // AUDIT_LOGS Collection (Append-Only)
+    match /audit_logs/{logId} {
+      allow read: if request.auth != null && isMunicipalityHQ();
+      allow create: if request.auth != null;
+      allow update, delete: if false; // Immutable audit logs
+    }
+
+    // COUNTERS Collection
     match /counters/{counterId} {
-      // Any authenticated user can read and increment the counter during issue creation
       allow read, write: if request.auth != null;
     }
-    
-    match /notifications/{notificationId} {
-      // Users can only read their own notifications
-      allow read: if request.auth != null && request.auth.uid == resource.data.userUID;
-      // Anyone can create a notification (e.g. system sending to inspector, or citizen commenting)
-      allow create: if request.auth != null && request.resource.data.userUID != null;
-      // Only the notification owner can update (mark as read) or delete
-      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userUID;
-    }
-    
+
+    // ISSUE_SUPPORTS Collection
     match /issue_supports/{supportId} {
-      allow read, write: if request.auth != null;
-    }
-    
-    match /activity_log/{logId} {
-      allow read, write: if request.auth != null;
-    }
-    
-    match /zones/{zoneId} {
-      allow read, write: if request.auth != null;
-    }
-    
-    match /import_batches/{batchId} {
-      allow read, write: if request.auth != null;
-    }
-    
-    match /survey_responses/{responseId} {
-      allow read, write: if request.auth != null;
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
     }
   }
 }

@@ -91,7 +91,7 @@ export default function InteractiveMap({
     };
   }, []);
 
-  // Sync tiles theme when theme changes
+  // Sync tiles theme on initial load
   useEffect(() => {
     if (!mapRef.current) return;
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
@@ -99,17 +99,19 @@ export default function InteractiveMap({
       ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" 
       : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
-    // Remove existing tilelayers & append new theme
+    let hasTileLayer = false;
     mapRef.current.eachLayer((layer: any) => {
       if (layer instanceof L.TileLayer) {
-        mapRef.current.removeLayer(layer);
+        hasTileLayer = true;
       }
     });
 
-    L.tileLayer(tileUrl, {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(mapRef.current);
-  }, [issues]);
+    if (!hasTileLayer) {
+      L.tileLayer(tileUrl, {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(mapRef.current);
+    }
+  }, []);
 
   // Sync Markers
   useEffect(() => {

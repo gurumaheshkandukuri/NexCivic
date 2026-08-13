@@ -32,10 +32,9 @@ interface LandingHeroProps {
   users: UserProfile[];
   setActiveTab: (tab: string) => void;
   user: UserProfile | null;
-  theme?: "light" | "dark";
 }
 
-export default function LandingHero({ users, setActiveTab, user, theme = "dark" }: LandingHeroProps) {
+export default function LandingHero({ users, setActiveTab, user }: LandingHeroProps) {
   const { issues } = useLiveIssues({ scope: "all" });
   const [selectedCity, setSelectedCity] = useState("Mumbai");
 
@@ -113,7 +112,7 @@ export default function LandingHero({ users, setActiveTab, user, theme = "dark" 
     <div className="relative py-12 md:py-24 overflow-hidden bg-mesh-gradient">
 
       {/* 3D Interactive Plexus Constellation Vector Grid */}
-      <InteractivePlexus theme={theme} />
+      <InteractivePlexus />
 
       {/* Decorative Glowing Floating Background Orbs */}
       <div className="bg-orb-purple top-24 -left-48 opacity-30" />
@@ -412,26 +411,26 @@ export default function LandingHero({ users, setActiveTab, user, theme = "dark" 
                 data={barChartData}
                 margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#cbd5e1'} opacity={0.12} vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.12} vertical={false} />
                 <XAxis
                   dataKey="name"
-                  tick={{ fill: theme === 'dark' ? '#94a3b8' : '#475569', fontSize: 10, fontWeight: 600 }}
-                  axisLine={{ stroke: theme === 'dark' ? '#334155' : '#cbd5e1', opacity: 0.3 }}
+                  tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }}
+                  axisLine={{ stroke: "#334155", opacity: 0.3 }}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fill: theme === 'dark' ? '#94a3b8' : '#475569', fontSize: 10, fontWeight: 600 }}
-                  axisLine={{ stroke: theme === 'dark' ? '#334155' : '#cbd5e1', opacity: 0.3 }}
+                  tick={{ fill: "#94a3b8", fontSize: 10, fontWeight: 600 }}
+                  axisLine={{ stroke: "#334155", opacity: 0.3 }}
                   tickLine={false}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: theme === "dark" ? "rgba(11, 15, 25, 0.95)" : "rgba(255, 255, 255, 0.95)",
-                    borderColor: theme === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)",
+                    backgroundColor: "rgba(11, 15, 25, 0.95)",
+                    borderColor: "rgba(255, 255, 255, 0.1)",
                     borderRadius: "16px",
-                    color: theme === "dark" ? "#f8fafc" : "#0f172a",
+                    color: "#f8fafc",
                     fontSize: "11px",
-                    boxShadow: theme === "dark" ? "0 10px 25px -5px rgba(0, 0, 0, 0.5)" : "0 10px 25px -5px rgba(0, 0, 0, 0.15)"
+                    boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)"
                   }}
                 />
                 <Bar

@@ -17,8 +17,10 @@ import {
 import { UserProfile, Issue } from "../types";
 import { useLiveIssues } from "../hooks/useLiveIssues";
 import { createIssue, confirmIssue } from "../services/issueService";
+import { enqueueComplaint } from "../services/offlineQueue";
 import confetti from "canvas-confetti";
 import { locationData } from "../constants/locations";
+import { getResilientCurrentPosition } from "../utils/geolocationHelper";
 
 declare const L: any;
 
@@ -164,6 +166,7 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
 
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [isOfflineSubmitted, setIsOfflineSubmitted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [createdId, setCreatedId] = useState("");
 
@@ -242,8 +245,37 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      setImage(reader.result as string);
-      setUploading(false);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+        
+        const MAX_DIMENSION = 800;
+        if (width > height && width > MAX_DIMENSION) {
+          height *= MAX_DIMENSION / width;
+          width = MAX_DIMENSION;
+        } else if (height > MAX_DIMENSION) {
+          width *= MAX_DIMENSION / height;
+          height = MAX_DIMENSION;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          setImage(canvas.toDataURL("image/jpeg", 0.6));
+        } else {
+          setImage(reader.result as string);
+        }
+        setUploading(false);
+      };
+      img.onerror = () => {
+        setImage(reader.result as string);
+        setUploading(false);
+      };
+      img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -323,76 +355,68 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
   }, []);
 
   // Helper function using browser Geolocation API and reverse geocoding to pre-populate Landmark, District, and City
-  const fetchAndPopulateLocationDetails = () => {
+  const fetchAndPopulateLocationDetails = async () => {
     setGpsStatus("connecting");
-    if (!navigator.geolocation) {
-      console.warn("Geolocation is not supported by your browser.");
+    
+    const geoResult = await getResilientCurrentPosition();
+    if (!geoResult.success || !geoResult.coords) {
       setGpsStatus("error");
       return;
     }
-    
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        setLat(latitude);
-        setLng(longitude);
-        setGpsStatus("active");
-        
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-          const data = await res.json();
-          if (data && data.address) {
-            const addr = data.address;
-            
-            const rawState = addr.state || "";
-            const rawDistrict = addr.state_district || addr.county || addr.suburb || addr.neighbourhood || "";
-            const rawCity = addr.city || addr.town || addr.village || addr.municipality || "";
-            
-            let finalState = "Not found";
-            let finalDistrict = "Not found";
-            let finalUlb = "Not found";
 
-            if (rawState && locationData[rawState]) {
-              finalState = rawState;
-              const districts = Object.keys(locationData[rawState]);
-              
-              const matchedDistrict = districts.find(d => rawDistrict && d.toLowerCase().includes(rawDistrict.toLowerCase().replace(" district", "")) || rawDistrict.toLowerCase().includes(d.toLowerCase()));
-              if (matchedDistrict) {
-                finalDistrict = matchedDistrict;
-                const ulbs = locationData[rawState][matchedDistrict];
-                const matchedUlb = ulbs.find(u => rawCity && (u.toLowerCase().includes(rawCity.toLowerCase()) || rawCity.toLowerCase().includes(u.toLowerCase().replace(" municipality", ""))));
-                if (matchedUlb) {
-                  finalUlb = matchedUlb;
-                }
-              }
-            }
-            
-            setState(finalState);
-            setDistrict(finalDistrict);
-            setUlb(finalUlb);
+    const { latitude, longitude } = geoResult.coords;
+    setLat(latitude);
+    setLng(longitude);
+    setGpsStatus("active");
 
-            const fetchedLandmark = addr.amenity || addr.building || addr.road || addr.industrial || addr.commercial || addr.subway || addr.railway || "";
-            if (fetchedLandmark) {
-              setLandmark(fetchedLandmark);
-            } else {
-              setLandmark(addr.road || "");
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+      const data = await res.json();
+      if (data && data.address) {
+        const addr = data.address;
+
+        const rawState = addr.state || "";
+        const rawDistrict = addr.state_district || addr.county || addr.suburb || addr.neighbourhood || "";
+        const rawCity = addr.city || addr.town || addr.village || addr.municipality || "";
+
+        let finalState = "Not found";
+        let finalDistrict = "Not found";
+        let finalUlb = "Not found";
+
+        if (rawState && locationData[rawState]) {
+          finalState = rawState;
+          const districts = Object.keys(locationData[rawState]);
+
+          const matchedDistrict = districts.find(d => rawDistrict && d.toLowerCase().includes(rawDistrict.toLowerCase().replace(" district", "")) || rawDistrict.toLowerCase().includes(d.toLowerCase()));
+          if (matchedDistrict) {
+            finalDistrict = matchedDistrict;
+            const ulbs = locationData[rawState][matchedDistrict];
+            const matchedUlb = ulbs.find(u => rawCity && (u.toLowerCase().includes(rawCity.toLowerCase()) || rawCity.toLowerCase().includes(u.toLowerCase().replace(" municipality", ""))));
+            if (matchedUlb) {
+              finalUlb = matchedUlb;
             }
-            setAddress(data.display_name || `${fetchedLandmark ? `${fetchedLandmark}, ` : ""}${rawDistrict}, ${rawCity}`);
           }
-        } catch (err) {
-          console.error("Error reverse-geocoding coordinates:", err);
-          setState("Not found");
-          setDistrict("Not found");
-          setUlb("Not found");
-          setAddress(`Coords: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
         }
-      },
-      (error) => {
-        console.error("Geolocation error:", error);
-        setGpsStatus("error");
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+
+        setState(finalState);
+        setDistrict(finalDistrict);
+        setUlb(finalUlb);
+
+        const fetchedLandmark = addr.amenity || addr.building || addr.road || addr.industrial || addr.commercial || addr.subway || addr.railway || "";
+        if (fetchedLandmark) {
+          setLandmark(fetchedLandmark);
+        } else {
+          setLandmark(addr.road || "");
+        }
+        setAddress(data.display_name || `${fetchedLandmark ? `${fetchedLandmark}, ` : ""}${rawDistrict}, ${rawCity}`);
+      }
+    } catch (err) {
+      console.error("Error reverse-geocoding coordinates:", err);
+      setState("Not found");
+      setDistrict("Not found");
+      setUlb("Not found");
+      setAddress(`Coords: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+    }
   };
 
   // Auto trigger exact location and address auto-fill on mount
@@ -528,51 +552,54 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
   const proceedWithSubmission = async () => {
     setLoading(true);
 
-    const fullDetailsLocation = `${landmark ? `${landmark}, ` : ""}${district}, ${ulb}`;
+    const issuePayload = {
+      title,
+      description,
+      category,
+      priority,
+      status: "Open",
+      latitude: lat,
+      longitude: lng,
+      district: district,
+      state: state,
+      ulb: ulb,
+      area: ulb,
+      landmark: landmark,
+      address: address || `${landmark ? landmark + ", " : ""}${district}, ${ulb}`,
+      reportedByUID: user.uid,
+      reportedByName: user.name,
+      assignedInspectorEmail: user.email,
+      communitySupportCount: 0,
+      inspectionImages: [],
+      resolutionImages: [],
+      timeline: [],
+      comments: [],
+      imageUrl: image || "",
+      imageFile: imageFile || null
+    };
 
     try {
-        console.log("TRACE [ReportIssue]: Submitting payload", {
-          imageUrl: image || "",
-          imageFile: imageFile || null
-        });
-
-      const res = await createIssue({
-        title,
-        description,
-        category,
-        priority,
-        status: "Open",
-        latitude: lat,
-        longitude: lng,
-        district: district,
-        state: state,
-        ulb: ulb,
-        area: ulb,
-        landmark: landmark,
-        address: address || `${landmark ? landmark + ", " : ""}${district}, ${ulb}`,
-        reportedByUID: user.uid,
-        reportedByName: user.name,
-        assignedInspectorEmail: user.email,
-        communitySupportCount: 0,
-        inspectionImages: [],
-        resolutionImages: [],
-        timeline: [],
-        comments: [],
-        imageUrl: image || "",
-        imageFile: imageFile || null
-      } as any);
-
-      console.log("TRACE [ReportIssue]: createIssue completed, res:", res);
-
-      if (!res) {
-        alert('Queued for sync: The network is currently unavailable. Your complaint will be synchronized once the connection is restored.');
-        setCreatedId('offline-queued');
+      if (!navigator.onLine) {
+        console.log("[ReportIssue] Offline mode detected. Enqueuing complaint to IndexedDB...");
+        const queued = await enqueueComplaint(issuePayload);
+        setIsOfflineSubmitted(true);
+        setCreatedId(queued ? queued.id : "OFFLINE-QUEUED");
         setSuccess(true);
       } else {
-        setCreatedId(res.id);
-        setSuccess(true);
+        const res = await createIssue(issuePayload as any);
+        if (!res) {
+          console.warn("[ReportIssue] createIssue returned undefined. Falling back to offline queue...");
+          const queued = await enqueueComplaint(issuePayload);
+          setIsOfflineSubmitted(true);
+          setCreatedId(queued ? queued.id : "OFFLINE-QUEUED");
+          setSuccess(true);
+        } else {
+          setIsOfflineSubmitted(false);
+          setCreatedId(res.id);
+          setSuccess(true);
+        }
       }
-      
+
       // confetti celebration
       confetti({
         particleCount: 150,
@@ -586,12 +613,20 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
       }, 4000);
 
     } catch (err) {
-      console.error("Submission failed:", err);
+      console.error("[ReportIssue] Submission network error, attempting offline queue fallback:", err);
+      try {
+        const queued = await enqueueComplaint(issuePayload);
+        setIsOfflineSubmitted(true);
+        setCreatedId(queued ? queued.id : "OFFLINE-QUEUED");
+        setSuccess(true);
+      } catch (queueErr) {
+        console.error("[ReportIssue] Offline queue fallback failed:", queueErr);
+      }
     } finally {
       setLoading(false);
       setShowDuplicateModal(false);
     }
-  }
+  };
 
   // Submit Issue
   const handleSubmit = async (e: React.FormEvent) => {
@@ -617,26 +652,40 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
   if (success) {
     return (
       <div className="max-w-xl mx-auto py-12 md:py-24 text-center flex flex-col items-center gap-6" data-aos="zoom-in">
-        <div className="w-20 h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-400 flex items-center justify-center animate-bounce text-emerald-400 font-extrabold shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+        <div className={`w-20 h-20 rounded-full border-2 flex items-center justify-center animate-bounce font-extrabold shadow-lg ${
+          isOfflineSubmitted 
+            ? "bg-amber-500/10 border-amber-400 text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.3)]"
+            : "bg-emerald-500/10 border-emerald-400 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+        }`}>
           <CheckCircle2 className="w-10 h-10" />
         </div>
         <h2 className="font-display font-extrabold text-3xl md:text-4xl text-[var(--text-1)]">
-          Civic Issue Logged!
+          {isOfflineSubmitted ? "Saved Offline!" : "Civic Issue Logged!"}
         </h2>
-        <div className="p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/15 max-w-sm">
-          <span className="block font-mono text-[10px] text-emerald-400 font-bold uppercase tracking-widest">
-            Achievement Unlock
+        <div className={`p-4 rounded-2xl border max-w-sm ${
+          isOfflineSubmitted
+            ? "bg-amber-500/5 border-amber-500/20 text-amber-200"
+            : "bg-emerald-500/5 border-emerald-500/15"
+        }`}>
+          <span className={`block font-mono text-[10px] font-bold uppercase tracking-widest ${
+            isOfflineSubmitted ? "text-amber-400" : "text-emerald-400"
+          }`}>
+            {isOfflineSubmitted ? "Offline Storage Queue" : "Achievement Unlock"}
           </span>
           <span className="block text-sm font-bold text-[var(--text-1)] mt-1">
-            +20 Community Experience XP
+            {isOfflineSubmitted 
+              ? "Complaint saved securely on your device." 
+              : "+20 Community Experience XP"}
           </span>
-          <span className="block text-[11px] text-[var(--text-2)] mt-0.5">
-            Your telemetry has been flagged for dispatching authorities.
+          <span className="block text-[11px] text-[var(--text-2)] mt-1 leading-relaxed">
+            {isOfflineSubmitted 
+              ? "It will automatically upload when internet is available." 
+              : "Your telemetry has been flagged for dispatching authorities."}
           </span>
         </div>
         <button
           onClick={() => { onSuccess(); setActiveTab("dashboard"); }}
-          className="px-6 py-2.5 bg-[var(--cyan)] hover:scale-103 transition-transform text-slate-950 font-bold rounded-xl text-xs"
+          className="px-6 py-2.5 bg-[var(--cyan)] hover:scale-103 transition-transform text-slate-950 font-bold rounded-xl text-xs touch-target cursor-pointer"
         >
           View Dashboard
         </button>
@@ -1060,36 +1109,54 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
 
       {/* DUPLICATE MODAL POPUP */}
       {showDuplicateModal && similarIssue && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
-          <div className="glass max-w-lg w-full rounded-3xl p-6 border border-slate-200 dark:border-gray-700 animate-zoomIn flex flex-col gap-4 text-left">
-            <div className="flex items-center gap-2 border-b border-slate-250 dark:border-gray-750 pb-3 mb-1">
-              <AlertTriangle className="w-5 h-5 text-amber-400" />
-              <h3 className="font-display font-bold text-base text-[var(--text-1)]">
-                Smart Duplicate Alert
-              </h3>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 overflow-hidden">
+          <div className="glass max-w-lg w-full rounded-3xl border border-slate-200 dark:border-gray-700 animate-zoomIn flex flex-col max-h-[90vh] text-left relative overflow-hidden shadow-2xl">
+            
+            {/* Fixed Header */}
+            <div className="p-6 pb-3 flex items-center justify-between border-b border-slate-250 dark:border-gray-750 shrink-0">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <h3 className="font-display font-bold text-base text-[var(--text-1)]">
+                  Smart Duplicate Alert
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setSimilarIssue(null);
+                }}
+                className="p-1 text-gray-400 hover:text-white rounded-lg text-xs font-bold"
+              >
+                ✕
+              </button>
             </div>
             
-            <p className="text-xs text-[var(--text-2)] leading-relaxed">
-              We identified an existing report representing the identical physical issue nearby. You can choose to add your upvote count to this ticket to escalate urgency, or submit yours separately anyway.
-            </p>
-
-            <div className="p-4 bg-slate-500/5 dark:bg-[rgba(255,255,255,0.02)] rounded-2xl border border-slate-200 dark:border-gray-700/20 text-xs">
-              {(similarIssue.imageUrl || similarIssue.imageData) && (
-                <img src={similarIssue.imageUrl || similarIssue.imageData || ""} alt={similarIssue.title} className="w-full h-auto rounded-lg mb-4" />
-              )}
-              <div className="font-extrabold text-sm flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-                {similarIssue.title}
-              </div>
-              <p className="text-[11px] text-[var(--text-2)] italic mt-1 leading-relaxed">
-                "{similarIssue.description}"
+            {/* Scrollable Body */}
+            <div className="p-6 flex-1 min-h-0 overflow-y-auto flex flex-col gap-4">
+              <p className="text-xs text-[var(--text-2)] leading-relaxed">
+                We identified an existing report representing the identical physical issue nearby. You can choose to add your upvote count to this ticket to escalate urgency, or submit yours separately anyway.
               </p>
-              <div className="text-[10px] text-gray-500 mt-2">
-                📍 {similarIssue.address} ({similarIssue.confirmCount} confirmations)
+
+              <div className="p-4 bg-slate-500/5 dark:bg-[rgba(255,255,255,0.02)] rounded-2xl border border-slate-200 dark:border-gray-700/20 text-xs">
+                {(similarIssue.imageUrl || similarIssue.imageData) && (
+                  <img src={similarIssue.imageUrl || similarIssue.imageData || ""} alt={similarIssue.title} className="w-full h-auto rounded-lg mb-4" />
+                )}
+                <div className="font-extrabold text-sm flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                  {similarIssue.title}
+                </div>
+                <p className="text-[11px] text-[var(--text-2)] italic mt-1 leading-relaxed">
+                  "{similarIssue.description}"
+                </p>
+                <div className="text-[10px] text-gray-500 mt-2">
+                  📍 {similarIssue.address} ({similarIssue.confirmCount} confirmations)
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-2">
+            {/* Pinned Action Buttons Footer */}
+            <div className="p-6 pt-3 border-t border-slate-250 dark:border-gray-750 shrink-0 grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={handleUpvoteDuplicate}

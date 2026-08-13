@@ -36,10 +36,12 @@ import {
   createImportBatch, 
   deleteImportBatchCascade
 } from "../services/adminService";
-import { generateResolutionCertificate } from "../utils/pdfGenerator";
+import { generateCitizenResolutionReport, generateResolutionCertificate, generateMunicipalityHQReport } from "../utils/pdfGenerator";
 import { generateInspectorAnalytics } from "../utils/analytics/inspectorAnalytics";
+import { getStatusBadgeClass } from '../constants/status';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { STATUS } from "../constants/status";
+import { ROLES } from "../constants/roles";
 
 import { useLiveIssues } from "../hooks/useLiveIssues";
 import { useLiveAnalytics } from "../hooks/useLiveAnalytics";
@@ -484,7 +486,7 @@ export default function AdminPanel({ user }: AdminPanelProps) {
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 flex flex-col gap-6 text-left">
       {/* Tab Navigation */}
       {(() => {
-        console.log("TRACE AdminPanel selectedIssue render:", selectedIssue);
+
         return null;
       })()}
       <div className="flex border-b border-gray-800 mb-6 px-6 pt-6">
@@ -650,7 +652,8 @@ export default function AdminPanel({ user }: AdminPanelProps) {
             Grievances Field Dispatch Operations Dashboard
           </span>
 
-          <div className="overflow-x-auto">
+          {/* Desktop & Tablet Table Layout (>=768px) */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs font-semibold">
               <thead>
                 <tr className="text-gray-500 border-b border-gray-700/15">
@@ -663,7 +666,16 @@ export default function AdminPanel({ user }: AdminPanelProps) {
                 </tr>
               </thead>
               <tbody>
-                {issues.map((issue) => {
+                {issues.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-gray-500 text-sm">
+                      <div className="flex flex-col items-center justify-center">
+                        <span className="text-2xl mb-2">📋</span>
+                        <p>No complaints assigned yet.</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : issues.map((issue) => {
                   const isHighlighted = highlightedId === issue.uid;
                   return (
                     <tr 
@@ -694,11 +706,7 @@ export default function AdminPanel({ user }: AdminPanelProps) {
                         </span>
                       </td>
                       <td className="py-3">
-                        <span className={`px-2 py-1 rounded text-[9px] font-extrabold border ${
-                          [STATUS.INSPECTION_STARTED, STATUS.RECOMMENDED_RESOLUTION, STATUS.RECOMMENDED_REJECTION, STATUS.AWAITING_HQ_REVIEW].includes(issue.status) ? "bg-[var(--blue)]/5 border-[var(--blue)]/20 text-[var(--blue)]"
-                          : [STATUS.RESOLVED, STATUS.INSPECTION_COMPLETED].includes(issue.status) ? "bg-[var(--green)]/5 border-[var(--green)]/20 text-[var(--green)]"
-                          : "bg-gray-500/5 border-gray-700/20 text-[var(--text-2)]"
-                        }`}>{issue.status}</span>
+                        <span className={getStatusBadgeClass(issue.status as string)}>{issue.status}</span>
                       </td>
                       <td className="py-3 text-right">
                         <button
@@ -708,7 +716,7 @@ export default function AdminPanel({ user }: AdminPanelProps) {
                             setNotes(issue.recommendationRemarks || "");
                             setAfterPhoto(issue.resolutionImages?.[0] || "");
                           }}
-                          className="p-1 px-3 bg-[var(--cyan)] hover:scale-103 transition-transform text-slate-950 rounded-lg font-bold cursor-pointer text-[10px]"
+                          className="p-1 px-3 bg-[var(--cyan)] hover:scale-103 transition-transform text-slate-950 rounded-lg font-bold cursor-pointer text-[10px] touch-target"
                         >
                           Inspect →
                         </button>
@@ -718,6 +726,68 @@ export default function AdminPanel({ user }: AdminPanelProps) {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Stacked Cards Layout (<768px) */}
+          <div className="md:hidden flex flex-col gap-3">
+            {issues.length === 0 ? (
+              <div className="py-12 text-center text-gray-500 text-sm">
+                <span className="text-2xl mb-2 block">📋</span>
+                <p>No complaints assigned yet.</p>
+              </div>
+            ) : (
+              issues.map((issue) => (
+                <div 
+                  key={issue.uid} 
+                  className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col gap-3 text-left"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-100">{issue.title}</h4>
+                      {issue.category && (
+                        <span className="text-[9px] font-mono font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 mt-1 inline-block">
+                          {issue.category}
+                        </span>
+                      )}
+                    </div>
+                    <span className={getStatusBadgeClass(issue.status as string)}>{issue.status}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs py-2 border-y border-slate-800/80">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Zone / Ward</span>
+                      <span className="text-slate-300 font-medium">{issue.area || issue.ulb || "N/A"}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Reporter</span>
+                      <span className="text-slate-300 font-medium">{issue.reportedByName || "Anonymous"}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Severity</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold inline-block mt-0.5 ${
+                        issue.priority === "Critical" ? "bg-rose-500/10 text-rose-400" 
+                        : issue.priority === "High" ? "bg-orange-500/10 text-orange-400"
+                        : "bg-slate-700/20 text-slate-400"
+                      }`}>
+                        {issue.priority}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setSelectedIssue(issue);
+                      setStatusInput(issue.status as any);
+                      setNotes(issue.recommendationRemarks || "");
+                      setAfterPhoto(issue.resolutionImages?.[0] || "");
+                    }}
+                    className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold cursor-pointer text-xs touch-target flex items-center justify-center gap-1.5 shadow-md"
+                  >
+                    Inspect & Resolve →
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -906,28 +976,31 @@ export default function AdminPanel({ user }: AdminPanelProps) {
       {/* INSPECT ACTION STATUS DIALOG */}
       {selectedIssue && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100] overflow-hidden">
-          <div className="glass max-w-4xl w-full rounded-3xl p-6 md:p-8 border border-slate-200/50 dark:border-white/10 flex flex-col gap-6 text-left relative max-h-[90vh] overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setSelectedIssue(null)}
-              className="absolute top-5 right-5 p-2 rounded-lg text-gray-400 hover:text-white hover:bg-[rgba(255,255,255,0.03)] transition-all z-10 font-bold"
-              title="Close Details Modal"
-            >
-              ✕
-            </button>
-
-            <div>
-              <span className="text-[10px] uppercase font-bold tracking-widest text-[var(--cyan)] font-mono flex items-center gap-2 flex-wrap">
-                <span>{selectedIssue.category || "General Incident"}</span>
-                <span>•</span>
-                <span>Reference: {selectedIssue.complaintId}</span>
-              </span>
-              <h3 className="font-display font-extrabold text-xl md:text-2xl text-[var(--text-1)] mt-1">
-                {selectedIssue.title}
-              </h3>
+          <div className="glass max-w-4xl w-full rounded-3xl p-6 md:p-8 border border-slate-200/50 dark:border-white/10 flex flex-col gap-5 text-left relative max-h-[90vh] overflow-hidden shadow-2xl">
+            
+            {/* Fixed Header */}
+            <div className="flex items-start justify-between gap-4 shrink-0 pb-3 border-b border-gray-700/30">
+              <div className="flex-1 min-w-0 pr-2">
+                <span className="text-[10px] uppercase font-bold tracking-widest text-[var(--cyan)] font-mono flex items-center gap-2 flex-wrap">
+                  <span>{selectedIssue.category || "General Incident"}</span>
+                  <span>•</span>
+                  <span>Reference: {selectedIssue.complaintId}</span>
+                </span>
+                <h3 className="font-display font-extrabold text-xl md:text-2xl text-[var(--text-1)] mt-1 truncate">
+                  {selectedIssue.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedIssue(null)}
+                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-slate-800/60 transition-all shrink-0 font-bold text-lg leading-none"
+                title="Close Details Modal"
+              >
+                ✕
+              </button>
             </div>
 
-            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start overflow-y-auto">
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start overflow-y-auto pr-1">
               {/* Left Column: Full Report Information */}
               <div className="lg:col-span-7 flex flex-col gap-5 lg:pr-2 pb-4">
                 {/* Image Section */}
@@ -1335,7 +1408,15 @@ export default function AdminPanel({ user }: AdminPanelProps) {
                       </div>
                       {selectedIssue.status === STATUS.RESOLVED && (
                         <button
-                          onClick={() => generateResolutionCertificate(selectedIssue, user)}
+                          onClick={() => {
+                            if (user?.role === ROLES.MUNICIPALITY_HQ) {
+                              generateMunicipalityHQReport(selectedIssue, user);
+                            } else if (user?.role === ROLES.FIELD_INSPECTOR) {
+                              generateResolutionCertificate(selectedIssue, user);
+                            } else {
+                              generateCitizenResolutionReport(selectedIssue, user);
+                            }
+                          }}
                           className="w-full py-3 bg-[var(--cyan)]/20 text-[var(--cyan)] font-bold rounded-xl text-xs hover:bg-[var(--cyan)]/30 transition-colors flex items-center justify-center gap-2 shadow-lg"
                         >
                           <Download className="w-4 h-4" /> Download Resolution Report (PDF)

@@ -4,6 +4,7 @@ import { Award, TrendingUp, FileText, CheckCircle, AlertTriangle, MapPin, Tag, C
 import { useState } from 'react';
 import { useLiveIssues } from '../hooks/useLiveIssues';
 import ComplaintDetailsModal from './ComplaintDetailsModal';
+import { getStatusBadgeClass } from '../constants/status';
 
 interface CitizenDashboardProps {
   user: UserProfile;
@@ -39,15 +40,7 @@ export default function CitizenDashboard({ user }: CitizenDashboardProps) {
 
   const categoryData = Object.keys(issuesByCategory).map(category => ({ name: category, count: issuesByCategory[category] }));
 
-  const getStatusChipStyle = (status: string) => {
-    switch (status) {
-      case 'Resolved': return 'bg-green-500/20 text-green-300';
-      case 'In Progress': return 'bg-blue-500/20 text-blue-300';
-      case 'Open':
-      default:
-        return 'bg-yellow-500/20 text-yellow-300';
-    }
-  };
+
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -133,7 +126,12 @@ export default function CitizenDashboard({ user }: CitizenDashboardProps) {
       <div className="mt-12">
         <h2 className="text-2xl font-bold text-white mb-6">Your Reported Issues</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {userIssues.length > 0 ? (
+          {isSyncing && userIssues.length === 0 ? (
+            <div className={`md:col-span-2 lg:col-span-3 ${clayCardStyle} text-center py-12 flex flex-col items-center justify-center`}>
+              <div className="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p className="text-gray-400 font-medium">Loading your reports...</p>
+            </div>
+          ) : userIssues.length > 0 ? (
             userIssues.slice(0, 9).map((issue) => (
               <div key={issue.id} className={`${clayCardStyle} flex flex-col group cursor-pointer hover:ring-2 hover:ring-cyan-500/50`} onClick={() => setSelectedIssue(issue)}>
                 {(issue.imageUrl || issue.imageData) && (
@@ -143,7 +141,7 @@ export default function CitizenDashboard({ user }: CitizenDashboardProps) {
                 )}
                 <div className="flex justify-between items-start mb-2">
                     <h3 className="text-md font-bold text-white flex-1 pr-2">{issue.title}</h3>
-                    <div className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap ${getStatusChipStyle(issue.status)}`}>
+                    <div className={getStatusBadgeClass(issue.status)}>
                         {issue.status}
                     </div>
                 </div>
@@ -170,8 +168,10 @@ export default function CitizenDashboard({ user }: CitizenDashboardProps) {
               </div>
             ))
           ) : (
-            <div className={`md:col-span-2 lg:col-span-3 ${clayCardStyle} text-center py-12`}>
-              <p className="text-gray-400">You haven't reported any issues yet.</p>
+            <div className={`md:col-span-2 lg:col-span-3 ${clayCardStyle} text-center py-12 flex flex-col items-center justify-center`}>
+              <FileText className="w-12 h-12 text-gray-600 mb-4" />
+              <p className="text-gray-300 font-bold text-lg mb-2">No complaints reported</p>
+              <p className="text-gray-500 text-sm">You haven't reported any issues yet. When you do, they will appear here.</p>
             </div>
           )}
         </div>

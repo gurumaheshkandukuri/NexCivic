@@ -16,13 +16,13 @@ import {
 } from "lucide-react";
 
 import { useLiveIssues } from "../hooks/useLiveIssues";
+import { getStatusBadgeClass } from "../constants/status";
 
 interface ProfilePageProps {
   user: UserProfile;
-  theme: "light" | "dark";
 }
 
-export default function ProfilePage({ user, theme }: ProfilePageProps) {
+export default function ProfilePage({ user }: ProfilePageProps) {
   const { issues: userIssues } = useLiveIssues({
     scope: "user",
     userId: user.uid
@@ -92,17 +92,18 @@ export default function ProfilePage({ user, theme }: ProfilePageProps) {
                 <p className="font-bold text-[var(--text-1)]">{issue.title}</p>
                 <p className="text-[10px] text-gray-400 mt-0.5">{issue.category} &bull; {issue.landmark}</p>
               </div>
-              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${ 
-                issue.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400' : 
-                issue.status === 'In Progress' ? 'bg-amber-500/10 text-amber-400' : 
-                'bg-rose-500/10 text-rose-400' 
-              }`}>
+              <span className={getStatusBadgeClass(issue.status as string)}>
                 {issue.status}
               </span>
             </div>
           ))}
           {userIssues.length === 0 && (
-            <p className="text-xs text-gray-500 text-center py-6 italic">No issues reported yet.</p>
+            <div className="py-8 text-center text-gray-500 text-sm glass p-4 rounded-xl border border-slate-200/50 dark:border-white/10">
+              <div className="flex flex-col items-center justify-center">
+                <span className="text-2xl mb-2">📋</span>
+                <p>No issues reported yet.</p>
+              </div>
+            </div>
           )}
         </div>
       </div>

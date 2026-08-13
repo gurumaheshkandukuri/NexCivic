@@ -19,7 +19,7 @@ import { motion } from "motion/react";
 
 export default function AboutSection() {
   return (
-    <div className="py-16 bg-gradient-to-b from-transparent via-slate-500/5 to-slate-500/10 dark:via-slate-950/40 dark:to-slate-950/60 relative overflow-hidden">
+    <div className="py-16 bg-gradient-to-b from-transparent via-slate-950/40 to-slate-950/60 relative overflow-hidden">
       
       {/* Visual background lights */}
       <div className="bg-orb-purple bottom-48 -left-48 opacity-20" />

@@ -21,6 +21,7 @@ import { confirmIssue, submitResolutionRating } from "../services/issueService";
 import TelanganaDashboard from "./TelanganaDashboard";
 
 import { useLiveIssues } from "../hooks/useLiveIssues";
+import { getResilientCurrentPosition } from "../utils/geolocationHelper";
 
 interface MapExplorerProps {
   user: UserProfile | null;
@@ -127,22 +128,22 @@ export default function MapExplorer({ user }: MapExplorerProps) {
     }
   };
 
-  const toggleNearbyFilter = () => {
+  const toggleNearbyFilter = async () => {
     if (!filterByNearby) {
       setLocationLoading(true);
-      navigator.geolocation.getCurrentPosition(position => {
-        setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+      const geoResult = await getResilientCurrentPosition();
+      if (geoResult.success && geoResult.coords) {
+        setUserLocation({ lat: geoResult.coords.latitude, lng: geoResult.coords.longitude });
         setFilterByNearby(true);
-        setLocationLoading(false);
-      }, () => {
-        alert("Could not get your location. Please ensure location services are enabled.");
-        setLocationLoading(false);
-      });
+      } else {
+        alert(geoResult.errorMessage || "Unable to fetch your current location. You can retry or manually select your location.");
+      }
+      setLocationLoading(false);
     } else {
       setFilterByNearby(false);
       setUserLocation(null);
     }
-  }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 flex flex-col text-left">
@@ -199,10 +200,10 @@ export default function MapExplorer({ user }: MapExplorerProps) {
           <TelanganaDashboard />
         </div>
       ) : (
-        <div className="h-[calc(100vh-170px)] flex flex-col lg:grid lg:grid-cols-12 gap-6 text-left animate-fadeIn">
+        <div className="min-h-[calc(100vh-170px)] lg:h-[calc(100vh-170px)] flex flex-col lg:grid lg:grid-cols-12 gap-6 text-left animate-fadeIn w-full max-w-full overflow-x-hidden">
       
       {/* Left side Filter & List explorer - ColSpan 4 */}
-      <div className="lg:col-span-4 flex flex-col gap-4 overflow-y-auto pr-1">
+      <div className="lg:col-span-4 flex flex-col gap-4 overflow-y-auto pr-1 w-full max-w-full">
         
         {/* Header summary info */}
         <div className="bg-[rgba(255,255,255,0.01)] border border-gray-700/10 p-4 rounded-2xl">
@@ -317,7 +318,7 @@ export default function MapExplorer({ user }: MapExplorerProps) {
       </div>
 
       {/* Right side interactive Map space - ColSpan 8 */}
-      <div className="lg:col-span-8 relative flex flex-col gap-4 h-full">
+      <div className="lg:col-span-8 relative flex flex-col gap-4 h-[380px] sm:h-[450px] lg:h-full min-h-[350px] w-full max-w-full rounded-2xl overflow-hidden">
         <InteractiveMap 
           issues={filteredIssues}
           selectedIssueId={selectedIssue?.complaintId}
@@ -328,7 +329,7 @@ export default function MapExplorer({ user }: MapExplorerProps) {
 
         {/* Floating pop-up overlay if details selected */}
         {selectedIssue && (
-          <div className="absolute bottom-4 left-4 right-4 glass rounded-3xl p-4 border border-[rgba(255,255,255,0.08)] z-30 shadow-2xl flex flex-col gap-3 text-left">
+          <div className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-4 glass rounded-3xl p-4 border border-[rgba(255,255,255,0.08)] z-30 shadow-2xl flex flex-col gap-3 text-left max-w-full">
             <button
               onClick={() => setSelectedIssue(null)}
               className="absolute top-3 right-3 p-1.5 text-xs text-gray-500 hover:text-white rounded-md"

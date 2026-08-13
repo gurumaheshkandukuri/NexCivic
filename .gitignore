@@ -6,3 +6,14 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Credentials & Config
+serviceAccountKey.json
+
+# Temporary & Build files
+*.txt
+.firebase/
+scratch/
+
+# Generated PDFs
+*.pdf

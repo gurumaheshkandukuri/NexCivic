@@ -22,6 +22,7 @@ import { ROLES } from "../constants/roles";
 import { STATUS } from "../constants/status";
 import { createNotification, getAdvancedNotificationPayload } from "./notificationService";
 import { createActivityLog } from "./userService";
+import { issueEvents } from "./issueEvents";
 
 import { stateCodes, districtCodes } from "../constants/locations";
 
@@ -148,6 +149,7 @@ export async function createIssue(issueData: Partial<Issue>): Promise<{ id: stri
         hotScore: 20,
         source: issueData.source || "app",
         importBatch: issueData.importBatch || null,
+        isPublic: (issueData as any).isPublic !== false,
         rating: null,
       };
 
@@ -188,12 +190,28 @@ export async function createIssue(issueData: Partial<Issue>): Promise<{ id: stri
           district: issueData.district,
           actionRoute: `/dashboard/issue/${id}`
         }));
+
+        if (issueData.reportedByUID && issueData.reportedByUID !== "anonymous") {
+          const citizenAssignNotifRef = doc(collection(db, "notifications"));
+          transaction.set(citizenAssignNotifRef, getAdvancedNotificationPayload({
+            targetUID: issueData.reportedByUID,
+            type: "CASE_ASSIGNED",
+            category: "WORKFLOW",
+            title: "Inspector Assigned",
+            message: `Your complaint ID: ${complaintId} has been assigned to inspector ${assignedInspectorName}.`,
+            severity: "low",
+            actorUID: "system",
+            complaintUID: id,
+            complaintId: complaintId,
+            state: issueData.state,
+            district: issueData.district,
+            actionRoute: `/dashboard/issue/${id}`
+          }));
+        }
       }
     });
 
-    // STEP 6: Console log immediately after Firestore create
-    console.log("TRACE [issueService]: Document created successfully.");
-    console.log("TRACE [issueService]: imageData length is:", (issueData as any).imageUrl?.length || "undefined");
+    // STEP 6: Document created
 
     // TEMPORARILY DISABLED FIREBASE STORAGE ENTIRELY
     /*
@@ -202,6 +220,19 @@ export async function createIssue(issueData: Partial<Issue>): Promise<{ id: stri
       // ... storage code bypassed for Zero-Cost fallback ...
     }
     */
+
+    // Emit Decoupled Lifecycle Event
+    issueEvents.emit("ISSUE_CREATED", {
+      issueId: id,
+      complaintId: complaintId,
+      title: issueData.title || "Untitled Civic Issue",
+      category: issueData.category || "Other",
+      district: issueData.district || "",
+      state: issueData.state || "",
+      reportedByUID: issueData.reportedByUID || "anonymous",
+      assignedInspectorUID: assignedInspectorUID || undefined,
+      assignedInspectorName: assignedInspectorName || undefined
+    });
 
     // Since ReportIssue.tsx uses the returned ID (uid), return uid so that component knows to update itself
     // We return an object containing id, complaintId, and assignedInspectorName
@@ -479,6 +510,22 @@ export async function updateIssueStatus(
             message: "You earned +50 xp for successful issue resolution!",
             severity: "low"
           }));
+
+          // Specifically notify citizen of HQ Approval
+          batch.set(doc(collection(db, "notifications")), getAdvancedNotificationPayload({
+            targetUID: reporterId,
+            type: "HQ_APPROVED",
+            category: "WORKFLOW",
+            title: "Resolution Approved by HQ",
+            message: `Municipality HQ has reviewed and approved the resolution for your issue "${issue.title}".`,
+            severity: "medium",
+            actorUID: details?.updatedByUID || "system",
+            complaintUID: issueId,
+            complaintId: issue.complaintId,
+            state: issue.state,
+            district: issue.district,
+            actionRoute: `/dashboard/issue/${issueId}`
+          }));
         }
       }
       
@@ -494,6 +541,23 @@ export async function updateIssueStatus(
         title: "Status Update",
         message,
         severity: "medium",
+        actorUID: details?.updatedByUID || "system",
+        complaintUID: issueId,
+        complaintId: issue.complaintId,
+        state: issue.state,
+        district: issue.district,
+        actionRoute: `/dashboard/issue/${issueId}`
+      }));
+    }
+
+    if (status === STATUS.RESOLVED && issue.assignedInspectorUID) {
+      batch.set(doc(collection(db, "notifications")), getAdvancedNotificationPayload({
+        targetUID: issue.assignedInspectorUID,
+        type: "HQ_APPROVED",
+        category: "WORKFLOW",
+        title: "HQ Approved Resolution",
+        message: `Municipality HQ has approved your resolution for complaint ID: ${issue.complaintId}.`,
+        severity: "low",
         actorUID: details?.updatedByUID || "system",
         complaintUID: issueId,
         complaintId: issue.complaintId,
@@ -603,15 +667,48 @@ export function uploadInspectionImage(
   onProgress?: (progress: number) => void
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    console.log(`TRACE [issueService]: Using zero-cost base64 fallback for inspection image (${type})`);
+
     
     // Simulate progress
     if (onProgress) onProgress(50);
 
     const reader = new FileReader();
     reader.onloadend = () => {
-        if (onProgress) onProgress(100);
-        resolve(reader.result as string);
+        // Create an image to render and compress
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+          
+          // Max dimension 800px to ensure base64 string is < 200kb
+          const MAX_DIMENSION = 800;
+          if (width > height && width > MAX_DIMENSION) {
+            height *= MAX_DIMENSION / width;
+            width = MAX_DIMENSION;
+          } else if (height > MAX_DIMENSION) {
+            width *= MAX_DIMENSION / height;
+            height = MAX_DIMENSION;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL("image/jpeg", 0.6); // 60% quality jpeg
+            if (onProgress) onProgress(100);
+            resolve(compressedBase64);
+          } else {
+             if (onProgress) onProgress(100);
+             resolve(reader.result as string);
+          }
+        };
+        img.onerror = (err) => {
+          console.error("Image loading error for compression:", err);
+          reject(err);
+        };
+        img.src = reader.result as string;
     };
     reader.onerror = (error) => {
         console.error("FileReader Error:", error);
@@ -747,6 +844,16 @@ export async function startInspection(issueId: string, user: UserProfile, compla
     }
 
     await batch.commit();
+
+    // Emit Decoupled Event
+    issueEvents.emit("INSPECTION_STARTED", {
+      issueId,
+      complaintId,
+      title: data.title || "Civic Issue",
+      reportedByUID: citizenUid,
+      assignedInspectorUID: user.uid,
+      assignedInspectorName: user.name
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
     throw error;
@@ -849,6 +956,15 @@ export async function completeInspection(
     }
 
     await batch.commit();
+
+    // Emit Decoupled Event
+    issueEvents.emit("INSPECTION_COMPLETED", {
+      issueId,
+      complaintId,
+      title: data.title || "Civic Issue",
+      assignedInspectorUID: user.uid,
+      assignedInspectorName: user.name
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
     throw error;
@@ -970,8 +1086,8 @@ export function subscribeToIssues(
       conditions.push(where("assignedInspectorUID", "==", options.userId));
     } else if (options.scope === "hq" && options.state) {
       conditions.push(where("state", "==", options.state));
-      // In production, we'd add an index for state + district.
-      // if (options.district) conditions.push(where("district", "==", options.district));
+    } else if (options.scope === "all") {
+      conditions.push(where("isPublic", "==", true));
     }
 
     if (options.filters) {
@@ -1000,6 +1116,12 @@ export function subscribeToIssues(
             title: raw.title,
             description: raw.description,
             imageUrl: raw.imageUrl,
+            imageData: raw.imageData,
+            inspectionImages: raw.inspectionImages || [],
+            resolutionImages: raw.resolutionImages || [],
+            timeline: raw.timeline || [],
+            rating: raw.rating,
+            ratingFeedback: raw.ratingFeedback,
             communitySupportCount: raw.communitySupportCount,
             reportedByName: raw.reportedByName,
             reportedByUID: raw.reportedByUID,
@@ -1162,6 +1284,17 @@ export async function submitResolutionRating(
     }
 
     await batch.commit();
+
+    // Emit Decoupled Event
+    issueEvents.emit("FEEDBACK_SUBMITTED", {
+      issueId,
+      complaintId: data.complaintId,
+      title: data.title || "Civic Issue",
+      rating,
+      citizenName: user.name,
+      reportedByUID: user.uid,
+      assignedInspectorUID: data.assignedInspectorUID || undefined
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
     throw error;
