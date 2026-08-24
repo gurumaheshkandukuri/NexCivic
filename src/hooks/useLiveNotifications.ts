@@ -6,7 +6,7 @@ import { subscribeToNotifications } from "../services/notificationService";
 // Development-only listener registry to prevent duplicate active listeners
 const _listenerRegistry = new Map<string, number>();
 
-export function useLiveNotifications(userId: string | undefined) {
+export function useLiveNotifications(userId: string | undefined, userRole?: string) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isSyncing, setIsSyncing] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(false);
@@ -37,7 +37,7 @@ export function useLiveNotifications(userId: string | undefined) {
       setLastSynced(new Date());
       setIsSyncing(metadata.hasPendingWrites); 
       setIsOffline(metadata.fromCache);
-    });
+    }, userRole);
 
     return () => {
       unsub && unsub();
@@ -46,7 +46,7 @@ export function useLiveNotifications(userId: string | undefined) {
          _listenerRegistry.set(listenerKey, current - 1);
       }
     };
-  }, [userId]);
+  }, [userId, userRole]);
 
   return { notifications, isSyncing, isOffline, lastSynced };
 }

@@ -127,6 +127,25 @@ class NotificationWorkflowService {
       createdBy: payload.reportedByUID
     });
 
+    // Notify Citizen who submitted complaint
+    if (payload.reportedByUID && payload.reportedByUID !== "anonymous") {
+      const citizenTemplate = {
+        title: `Complaint Submitted: ${payload.complaintId}`,
+        body: `Your grievance "${payload.title}" has been registered successfully.`,
+        type: "NEW_COMPLAINT",
+        priority: "High"
+      };
+      await this.dispatch({
+        eventId: `${payload.eventId}_citizen`,
+        recipientUID: payload.reportedByUID,
+        recipientRole: ROLES.CITIZEN,
+        templateResult: citizenTemplate,
+        issueId: payload.issueId,
+        categoryKey: "newComplaint",
+        createdBy: payload.reportedByUID
+      });
+    }
+
     // If auto-assigned to inspector, notify inspector
     if (payload.assignedInspectorUID) {
       const assignTemplate = NOTIFICATION_TEMPLATES.COMPLAINT_ASSIGNED({
@@ -158,13 +177,24 @@ class NotificationWorkflowService {
     });
 
     await this.dispatch({
-      eventId: payload.eventId,
+      eventId: `${payload.eventId}_inspector`,
       recipientUID: payload.assignedInspectorUID,
       recipientRole: ROLES.FIELD_INSPECTOR,
       templateResult: template,
       issueId: payload.issueId,
       categoryKey: "assignment"
     });
+
+    if (payload.reportedByUID && payload.reportedByUID !== "anonymous") {
+      await this.dispatch({
+        eventId: `${payload.eventId}_citizen`,
+        recipientUID: payload.reportedByUID,
+        recipientRole: ROLES.CITIZEN,
+        templateResult: template,
+        issueId: payload.issueId,
+        categoryKey: "assignment"
+      });
+    }
   }
 
   private async handleInspectionStarted(payload: IssueEventPayload): Promise<void> {

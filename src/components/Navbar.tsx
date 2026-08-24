@@ -29,13 +29,15 @@ interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenNotification: (issueId: string) => void;
+  onOpenNotificationCenter?: () => void;
 }
 
 export default function Navbar({
   user,
   activeTab,
   setActiveTab,
-  onOpenNotification
+  onOpenNotification,
+  onOpenNotificationCenter
 }: NavbarProps) {
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -56,7 +58,7 @@ export default function Navbar({
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const { notifications } = useLiveNotifications(user?.uid);
+  const { notifications } = useLiveNotifications(user?.uid, user?.role);
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleSignOut = async () => {
@@ -175,8 +177,12 @@ export default function Navbar({
               <div className="relative" ref={notifRef}>
                 <button
                   onClick={() => {
-                    if (!notifDropdownOpen) setProfileDropdownOpen(false);
-                    setNotifDropdownOpen(!notifDropdownOpen);
+                    if (onOpenNotificationCenter) {
+                      onOpenNotificationCenter();
+                    } else {
+                      if (!notifDropdownOpen) setProfileDropdownOpen(false);
+                      setNotifDropdownOpen(!notifDropdownOpen);
+                    }
                   }}
                   className="p-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/[0.06] relative transition-all touch-target flex items-center justify-center"
                   aria-label="Notifications"

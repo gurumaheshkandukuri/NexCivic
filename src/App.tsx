@@ -81,16 +81,21 @@ export default function App() {
 
   // Realtime Notifications Subscription
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      setNotifications([]);
+      setUnreadCount(0);
+      setLatestNotification(null);
+      return;
+    }
     const unsub = subscribeNotifications(user.uid, (items, unread) => {
       setNotifications(items);
       setUnreadCount(unread);
       if (items.length > 0) {
         setLatestNotification(items[0]);
       }
-    });
+    }, 50, user.role);
     return () => unsub();
-  }, [user?.uid]);
+  }, [user?.uid, user?.role]);
 
   // Listen to Auth State
   useEffect(() => {
@@ -201,7 +206,8 @@ export default function App() {
         user={user} 
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
-        onOpenNotification={() => {}}
+        onOpenNotification={() => setIsNotifCenterOpen(true)}
+        onOpenNotificationCenter={() => setIsNotifCenterOpen(true)}
       />
 
       {/* Main active route renders */}
@@ -425,6 +431,11 @@ export default function App() {
         notifications={notifications} 
         unreadCount={unreadCount} 
         userUID={user?.uid || ""} 
+        userRole={user?.role}
+        onOpenNotification={() => {
+          setActiveTab("dashboard");
+          setIsNotifCenterOpen(false);
+        }}
       />
     </div>
   );

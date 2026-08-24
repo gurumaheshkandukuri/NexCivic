@@ -17,6 +17,7 @@ import {
   DocumentSnapshot
 } from "firebase/firestore";
 import { db, auth, OperationType, handleFirestoreError } from "../firebase-init";
+import { ROLES } from "../constants/roles";
 
 export type NotificationType = 
   | "NEW_COMPLAINT"
@@ -62,7 +63,12 @@ export async function hasEventBeenDispatched(eventId: string, recipientUID: stri
   
   // Security guard: only query deduplication if recipient matches current user or broadcast or authorized
   const currentUID = auth.currentUser?.uid;
-  if (recipientUID !== currentUID && recipientUID !== "MUNICIPALITY_HQ_ALL") {
+  if (!currentUID) return false;
+
+  const isRecipient = recipientUID === currentUID;
+  const isHqBroadcast = recipientUID === "MUNICIPALITY_HQ_ALL";
+
+  if (!isRecipient && !isHqBroadcast) {
     return false;
   }
 
@@ -149,13 +155,18 @@ export async function markAsRead(notificationId: string): Promise<void> {
 /**
  * Mark all unread notifications for a user as read
  */
-export async function markAllAsRead(recipientUID: string): Promise<void> {
+export async function markAllAsRead(recipientUID: string, userRole?: string): Promise<void> {
   if (!recipientUID) return;
   const path = "notifications";
   try {
+    const isHQ = userRole === ROLES.MUNICIPALITY_HQ || userRole === "MunicipalityHQ" || userRole === "MunicipalityMgr";
+    const recipientFilter = isHQ 
+      ? where("recipientUID", "in", [recipientUID, "MUNICIPALITY_HQ_ALL"])
+      : where("recipientUID", "==", recipientUID);
+
     const q = query(
       collection(db, "notifications"), 
-      where("recipientUID", "==", recipientUID), 
+      recipientFilter, 
       where("read", "==", false)
     );
     const snap = await getDocs(q);
@@ -195,16 +206,22 @@ export async function deleteNotification(notificationId: string): Promise<void> 
 export function subscribeNotifications(
   recipientUID: string, 
   callback: (notifications: NotificationPayload[], unreadCount: number, lastSnap: DocumentSnapshot | null) => void,
-  pageSize: number = 50
+  pageSize: number = 50,
+  userRole?: string
 ) {
   if (!recipientUID) return () => {};
   const path = "notifications";
   let isFirstLoad = true;
 
   try {
+    const isHQ = userRole === ROLES.MUNICIPALITY_HQ || userRole === "MunicipalityHQ" || userRole === "MunicipalityMgr";
+    const recipientFilter = isHQ 
+      ? where("recipientUID", "in", [recipientUID, "MUNICIPALITY_HQ_ALL"])
+      : where("recipientUID", "==", recipientUID);
+
     const q = query(
       collection(db, "notifications"), 
-      where("recipientUID", "==", recipientUID), 
+      recipientFilter, 
       orderBy("createdAt", "desc"),
       firestoreLimit(pageSize)
     );
@@ -240,7 +257,7 @@ export function subscribeNotifications(
       const unreadCount = items.filter((item) => !item.read).length;
 
       // Trigger Browser Notification API for new incoming items (if permission granted)
-      if (!isFirstLoad && Notification.permission === "granted") {
+      if (!isFirstLoad && typeof Notification !== "undefined" && Notification.permission === "granted") {
         snap.docChanges().forEach((change) => {
           if (change.type === "added") {
             const newNotif = change.doc.data();
@@ -321,12 +338,17 @@ export async function loadMoreNotifications(
 /**
  * Get count of unread notifications
  */
-export async function getUnreadCount(recipientUID: string): Promise<number> {
+export async function getUnreadCount(recipientUID: string, userRole?: string): Promise<number> {
   if (!recipientUID) return 0;
   try {
+    const isHQ = userRole === ROLES.MUNICIPALITY_HQ || userRole === "MunicipalityHQ" || userRole === "MunicipalityMgr";
+    const recipientFilter = isHQ 
+      ? where("recipientUID", "in", [recipientUID, "MUNICIPALITY_HQ_ALL"])
+      : where("recipientUID", "==", recipientUID);
+
     const q = query(
       collection(db, "notifications"), 
-      where("recipientUID", "==", recipientUID), 
+      recipientFilter, 
       where("read", "==", false)
     );
     const snap = await getDocs(q);
@@ -341,11 +363,12 @@ export const markNotificationAsRead = markAsRead;
 export const markAllNotificationsAsRead = markAllAsRead;
 export const subscribeToNotifications = (
   userId: string, 
-  callback: (notifications: any[], metadata: { hasPendingWrites: boolean; fromCache: boolean }) => void
+  callback: (notifications: any[], metadata: { hasPendingWrites: boolean; fromCache: boolean }) => void,
+  userRole?: string
 ) => {
   return subscribeNotifications(userId, (items) => {
     callback(items, { hasPendingWrites: false, fromCache: false });
-  });
+  }, 50, userRole);
 };
 
 export function getAdvancedNotificationPayload(params: any): any {
