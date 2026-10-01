@@ -115,11 +115,8 @@ export default function TelanganaDashboard() {
     const map = L.map(mapContainerRef.current).setView([17.85, 79.15], 8);
     mapRef.current = map;
 
-    // CartoDB dark or light basemap tiling
-    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    const tileUrl = isDark 
-      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" 
-      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+    // OpenStreetMap basemap tiling
+    const tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
     L.tileLayer(tileUrl, {
       attribution: '&copy; Telangana State OS & OpenStreetMap'
@@ -267,9 +264,7 @@ export default function TelanganaDashboard() {
   // Sync map tiles dynamically when theme changes
   useEffect(() => {
     if (!mapRef.current) return;
-    const tileUrl = currentTheme === "light" 
-      ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+    const tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
     // Remove existing tilelayers & append new theme
     mapRef.current.eachLayer((layer: any) => {

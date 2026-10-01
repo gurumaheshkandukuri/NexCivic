@@ -1088,6 +1088,10 @@ export function subscribeToIssues(
       conditions.push(where("state", "==", options.state));
     } else if (options.scope === "all") {
       conditions.push(where("isPublic", "==", true));
+    } else {
+      // Guard against un-scoped query
+      callback([], { hasPendingWrites: false, fromCache: false });
+      return () => {};
     }
 
     if (options.filters) {
@@ -1098,7 +1102,7 @@ export function subscribeToIssues(
 
     const q = query(collection(db, "issues"), ...conditions);
     
-    return onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
+    return onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => {
         const raw = d.data() as Issue;
         if (options.scope === "all") {

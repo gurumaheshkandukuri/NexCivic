@@ -21,6 +21,7 @@ import { enqueueComplaint } from "../services/offlineQueue";
 import confetti from "canvas-confetti";
 import { locationData } from "../constants/locations";
 import { getResilientCurrentPosition } from "../utils/geolocationHelper";
+import { generateDHashFromImage, computeImageDHash, compareImageHashes } from "../services/imageSimilarityEngine";
 
 declare const L: any;
 
@@ -163,6 +164,7 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
 
   const [similarIssue, setSimilarIssue] = useState<Issue | null>(null);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [currentImageHash, setCurrentImageHash] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -172,30 +174,28 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Check proximity and similarity for similar issues during coordinates / details typing
+  // Check proximity, text similarity, and image dHash for similar issues during coordinates / details typing
   useEffect(() => {
     if (!lat || !lng) return;
 
-    // Haversine formula and Jaccard similarity on client-side to preempt blockages
-    const findNearby = () => {
-      // Don't flag duplicates if user hasn't typed enough to compare
-      if (!title || title.length < 5) {
-        setSimilarIssue(null);
+    let isMounted = true;
+
+    // Haversine proximity + Jaccard text similarity + HTML5 Canvas dHash image similarity
+    const findNearby = async () => {
+      // Don't flag duplicates if user hasn't typed enough to compare and no image is uploaded
+      if ((!title || title.length < 5) && !currentImageHash) {
+        if (isMounted) setSimilarIssue(null);
         return;
       }
 
       const R = 6371e3; // metres
-      const match = issues.find((issue) => {
-        // Condition 1: Same complaint category.
+
+      // Filter candidate issues by spatial location (<= 150m), category, and active status FIRST
+      const candidateIssues = issues.filter((issue) => {
         if (issue.category !== category) return false;
-        
-        // Condition 2: Existing complaint status is NOT "Resolved".
         if (issue.status === "Resolved" || issue.status === "RESOLVED") return false;
-        
-        // Condition 5: Existing complaint is not the same complaint currently being edited.
         if ((issue as any).id === createdId || issue.uid === createdId) return false;
 
-        // Condition 3: Distance between complaints is within configured threshold (100–150 meters).
         const lat1 = lat * Math.PI / 180;
         const lat2 = (issue.latitude || 0) * Math.PI / 180;
         const deltaLat = ((issue.latitude || 0) - lat) * Math.PI / 180;
@@ -207,31 +207,69 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const d = R * c; // in metres
 
-        if (d > 150) return false; // Must be within 150m
+        return d <= 150; // Must be within 150m
+      });
 
-        // Condition 4: Title and/or description similarity exceeds configured threshold.
+      if (candidateIssues.length === 0) {
+        if (isMounted) setSimilarIssue(null);
+        return;
+      }
+
+      let match: Issue | null = null;
+
+      for (const issue of candidateIssues) {
+        // 1. Text Similarity Check (Jaccard > 0.25)
         const getWords = (text: string) => (text || "").toLowerCase().split(/\W+/).filter(w => w.length > 2);
-        
         const currentWords = new Set([...getWords(title), ...getWords(description)]);
         const issueWords = new Set([...getWords(issue.title), ...getWords(issue.description)]);
-        
-        if (currentWords.size === 0 || issueWords.size === 0) return false;
-        
-        let intersection = 0;
-        currentWords.forEach(word => {
-          if (issueWords.has(word)) intersection++;
-        });
-        
-        const union = currentWords.size + issueWords.size - intersection;
-        const similarity = intersection / union;
-        
-        return similarity > 0.25; // 25% word overlap threshold
-      });
-      setSimilarIssue(match || null);
+
+        let textMatched = false;
+        if (currentWords.size > 0 && issueWords.size > 0) {
+          let intersection = 0;
+          currentWords.forEach(word => {
+            if (issueWords.has(word)) intersection++;
+          });
+          const union = currentWords.size + issueWords.size - intersection;
+          if ((intersection / union) > 0.25) {
+            textMatched = true;
+          }
+        }
+
+        if (textMatched) {
+          match = issue;
+          break;
+        }
+
+        // 2. Image dHash Visual Similarity Check (if current image has hash and candidate has image)
+        if (currentImageHash && (issue.imageUrl || issue.imageData)) {
+          try {
+            const candidateSrc = issue.imageUrl || issue.imageData || "";
+            const candidateHash = await computeImageDHash(candidateSrc);
+            if (candidateHash) {
+              const comparison = compareImageHashes(currentImageHash, candidateHash);
+              if (comparison.isVisualMatch) {
+                match = issue;
+                break;
+              }
+            }
+          } catch (err) {
+            // Graceful fallback if CORS or candidate image load fails
+            console.warn("Candidate image hash comparison fallback:", err);
+          }
+        }
+      }
+
+      if (isMounted) {
+        setSimilarIssue(match);
+      }
     };
 
     findNearby();
-  }, [lat, lng, issues, title, description, category, createdId]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [lat, lng, issues, title, description, category, createdId, currentImageHash]);
 
   // Handle Drag-Over Image logic
   const handleDragOver = (e: React.DragEvent) => {
@@ -247,6 +285,14 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
     reader.onloadend = () => {
       const img = new Image();
       img.onload = () => {
+        // Generate dHash for image similarity comparison
+        try {
+          const hash = generateDHashFromImage(img);
+          setCurrentImageHash(hash);
+        } catch (err) {
+          console.warn("Could not generate dHash for uploaded image:", err);
+        }
+
         const canvas = document.createElement("canvas");
         let width = img.width;
         let height = img.height;
@@ -439,10 +485,7 @@ export default function ReportIssue({ user, onSuccess, setActiveTab }: ReportIss
     
     mapRef.current = map;
 
-    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    const tileUrl = isDark 
-      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" 
-      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+    const tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
     L.tileLayer(tileUrl).addTo(map);
 

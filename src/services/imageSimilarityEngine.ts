@@ -1,93 +1,113 @@
-// NexCivic Duplicate Image Intelligence Engine
-import { Issue } from "../types";
+// NexCivic HTML5 Canvas Difference Hash (dHash) Image Similarity Engine
+// Operates 100% locally in browser JS at ZERO COST.
 
-export interface DuplicateMatch {
-  issueId: string;
-  complaintId: string;
-  category: string;
+export interface ImageHashComparisonResult {
   similarityPercentage: number;
-  distanceMeters: number;
-  matchedImageURL?: string;
-  status: string;
-}
-
-export interface ImageSimilarityResult {
-  duplicateProbabilityPercentage: number;
-  isHighDuplicateRisk: boolean;
-  matchingComplaints: DuplicateMatch[];
-  confidencePercentage: number;
-  explanation: string;
+  differingBits: number;
+  isVisualMatch: boolean;
 }
 
 /**
- * Compares current image features, location proximity, and category against active complaints
+ * Calculates Hamming distance (number of differing bits) between two binary hash strings
  */
-export function detectDuplicateImage(
-  currentFileNameOrSize: string | number,
-  currentLat?: number,
-  currentLng?: number,
-  currentCategory?: string,
-  existingIssues: Partial<Issue>[] = []
-): ImageSimilarityResult {
-  if (existingIssues.length === 0 || typeof currentLat !== "number" || typeof currentLng !== "number") {
-    return {
-      duplicateProbabilityPercentage: 0,
-      isHighDuplicateRisk: false,
-      matchingComplaints: [],
-      confidencePercentage: 90,
-      explanation: "No spatial or visual duplicate overlap detected in current jurisdiction database."
-    };
+export function calculateHammingDistance(hash1: string, hash2: string): number {
+  if (!hash1 || !hash2 || hash1.length !== hash2.length) {
+    return 64; // Maximum difference if hash is missing or invalid
   }
+  let count = 0;
+  for (let i = 0; i < hash1.length; i++) {
+    if (hash1[i] !== hash2[i]) count++;
+  }
+  return count;
+}
 
-  const matches: DuplicateMatch[] = [];
-
-  existingIssues.forEach((issue) => {
-    if (typeof issue.latitude !== "number" || typeof issue.longitude !== "number") return;
-
-    // Calculate approximate distance in meters
-    const dLat = Math.abs(issue.latitude - currentLat) * 111000;
-    const dLng = Math.abs(issue.longitude - currentLng) * 111000 * Math.cos((currentLat * Math.PI) / 180);
-    const distanceMeters = Math.round(Math.sqrt(dLat * dLat + dLng * dLng));
-
-    // Spatial proximity check (< 1000m)
-    if (distanceMeters <= 1000) {
-      let similarity = 60;
-      if (distanceMeters < 100) similarity += 25;
-      else if (distanceMeters < 300) similarity += 15;
-
-      if (issue.category === currentCategory) {
-        similarity += 15;
-      }
-
-      similarity = Math.min(similarity, 98);
-
-      matches.push({
-        issueId: issue.uid || issue.complaintId || "N/A",
-        complaintId: issue.complaintId || "N/A",
-        category: issue.category || "General",
-        similarityPercentage: similarity,
-        distanceMeters,
-        matchedImageURL: issue.imageUrl || (issue.inspectionImages && issue.inspectionImages[0]) || undefined,
-        status: issue.status || "Pending"
-      });
-    }
-  });
-
-  matches.sort((a, b) => b.similarityPercentage - a.similarityPercentage);
-
-  const topMatch = matches[0];
-  const duplicateProbabilityPercentage = topMatch ? topMatch.similarityPercentage : 0;
-  const isHighDuplicateRisk = duplicateProbabilityPercentage >= 80;
-
-  const explanation = isHighDuplicateRisk
-    ? `High duplicate likelihood (${duplicateProbabilityPercentage}%). A matching ${topMatch.category} complaint was logged ${topMatch.distanceMeters}m away.`
-    : "No duplicate visual or spatial matches found in active complaint records.";
+/**
+ * Compares two 64-bit binary hashes and returns visual match probability
+ */
+export function compareImageHashes(hash1: string, hash2: string): ImageHashComparisonResult {
+  const differingBits = calculateHammingDistance(hash1, hash2);
+  const similarityPercentage = Math.max(0, Math.round(((64 - differingBits) / 64) * 100));
+  // Hamming distance <= 12 bits out of 64 corresponds to ~81%+ visual match
+  const isVisualMatch = differingBits <= 12;
 
   return {
-    duplicateProbabilityPercentage,
-    isHighDuplicateRisk,
-    matchingComplaints: matches.slice(0, 3),
-    confidencePercentage: 91,
-    explanation
+    similarityPercentage,
+    differingBits,
+    isVisualMatch
   };
+}
+
+/**
+ * Generates a 64-bit Difference Hash (dHash) from an HTMLImageElement using offscreen 9x8 Canvas
+ */
+export function generateDHashFromImage(img: HTMLImageElement): string | null {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 9;
+    canvas.height = 8;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.drawImage(img, 0, 0, 9, 8);
+    const imageData = ctx.getImageData(0, 0, 9, 8);
+    const pixels = imageData.data;
+
+    // Convert pixels to 9x8 luminance array
+    const grayscale: number[][] = [];
+    for (let y = 0; y < 8; y++) {
+      const row: number[] = [];
+      for (let x = 0; x < 9; x++) {
+        const i = (y * 9 + x) * 4;
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        // Standard ITU-R BT.601 luminance formula
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+        row.push(luminance);
+      }
+      grayscale.push(row);
+    }
+
+    // Compare left vs right pixel in each row to generate 64 binary bits
+    let hash = "";
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        const leftPixel = grayscale[y][x];
+        const rightPixel = grayscale[y][x + 1];
+        hash += leftPixel > rightPixel ? "1" : "0";
+      }
+    }
+
+    return hash.length === 64 ? hash : null;
+  } catch (err) {
+    console.warn("dHash generation warning:", err);
+    return null;
+  }
+}
+
+/**
+ * Asynchronously generates 64-bit dHash from an image URL or data URL safely
+ */
+export function computeImageDHash(imageSrc: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!imageSrc) {
+      resolve(null);
+      return;
+    }
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const hash = generateDHashFromImage(img);
+        resolve(hash);
+      };
+      img.onerror = () => {
+        // Fallback gracefully without breaking calling flow
+        resolve(null);
+      };
+      img.src = imageSrc;
+    } catch {
+      resolve(null);
+    }
+  });
 }

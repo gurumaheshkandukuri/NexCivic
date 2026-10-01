@@ -21,6 +21,7 @@ import {
   Star
 } from "lucide-react";
 import { Issue, UserProfile, ImportBatch } from "../types";
+import { exportFIOCSV, filterIssuesByMonth, MONTH_NAMES } from "../utils/csvExporter";
 import { 
   updateIssueStatus, 
   mergeIssues, 
@@ -83,6 +84,12 @@ export default function AdminPanel({ user }: AdminPanelProps) {
   // State handles for duplicate scanning via Gemini
   const [duplicateScanResults, setDuplicateScanResults] = useState<any[]>([]);
   const [scanningDuplicates, setScanningDuplicates] = useState(false);
+
+  // Monthly CSV Export State for FIO
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [csvFeedback, setCsvFeedback] = useState<string>("");
 
   useEffect(() => {
     loadBatches();
@@ -578,6 +585,69 @@ export default function AdminPanel({ user }: AdminPanelProps) {
               <span className="text-[10px] uppercase text-gray-400 font-bold block">Longest Pending</span>
               <span className="text-2xl font-black text-red-400 block mt-1">{summary.longestPendingCaseDays ? `${summary.longestPendingCaseDays}d` : '0d'}</span>
             </div>
+          </div>
+
+          {/* Monthly CSV Export Widget for FIO */}
+          <div className="glass rounded-3xl p-5 border border-cyan-500/30 bg-slate-900/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                <Download className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-white">Monthly Field Inspection CSV Export</h3>
+                <p className="text-xs text-gray-400">Export authorized field officer complaint and resolution logs</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-cyan-500"
+              >
+                <option value={-1}>All Months</option>
+                {MONTH_NAMES.map((m, idx) => (
+                  <option key={m} value={idx}>{m}</option>
+                ))}
+              </select>
+
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-cyan-500"
+              >
+                <option value={2026}>2026</option>
+                <option value={2025}>2025</option>
+              </select>
+
+              <span className="text-xs font-mono text-cyan-400 font-bold px-2">
+                Reports: {filterIssuesByMonth(issues, selectedYear, selectedMonth).length}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const filtered = filterIssuesByMonth(issues, selectedYear, selectedMonth);
+                  if (filtered.length === 0) {
+                    const monthLabel = selectedMonth === -1 ? "All Months" : MONTH_NAMES[selectedMonth];
+                    setCsvFeedback(`No complaints found for ${monthLabel} ${selectedYear}.`);
+                    setTimeout(() => setCsvFeedback(""), 4000);
+                    return;
+                  }
+                  setCsvFeedback("");
+                  const monthName = selectedMonth === -1 ? "All_Months" : MONTH_NAMES[selectedMonth];
+                  exportFIOCSV(filtered, monthName, selectedYear);
+                }}
+                className="py-2 px-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Download className="w-4 h-4" /> Download FIO CSV
+              </button>
+            </div>
+            {csvFeedback && (
+              <div className="w-full text-xs text-amber-400 font-mono text-center md:text-right mt-1">
+                {csvFeedback}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

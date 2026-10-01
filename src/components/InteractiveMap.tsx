@@ -46,10 +46,7 @@ export default function InteractiveMap({
     mapRef.current = map;
 
     // Load OpenStreetMap Tiles
-    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    const tileUrl = isDark 
-      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" 
-      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+    const tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
     L.tileLayer(tileUrl, {
       attribution: '&copy; OpenStreetMap contributors'
@@ -94,10 +91,7 @@ export default function InteractiveMap({
   // Sync tiles theme on initial load
   useEffect(() => {
     if (!mapRef.current) return;
-    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    const tileUrl = isDark 
-      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" 
-      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+    const tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
     let hasTileLayer = false;
     mapRef.current.eachLayer((layer: any) => {

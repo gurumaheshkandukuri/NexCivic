@@ -72,29 +72,29 @@ export default function ComplaintDetailsModal({ issue, user, onClose, onRefresh 
   const locationText = [issue.landmark, issue.area, issue.ulb, issue.district, issue.state].filter(Boolean).join(', ');
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 overflow-hidden" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto flex items-end sm:items-center justify-center p-2 sm:p-4 md:p-6 backdrop-blur-sm" onClick={onClose}>
       <div 
-        className="glass max-w-2xl w-full bg-slate-900 rounded-3xl border border-slate-700 max-h-[90vh] flex flex-col text-left relative overflow-hidden shadow-2xl"
+        className="glass max-w-2xl w-full bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-700 max-h-[85vh] sm:max-h-[90vh] my-auto flex flex-col text-left relative overflow-hidden shadow-2xl shrink-0"
         onClick={(e) => e.stopPropagation()}
         id="resolution-report-content"
       >
         {/* Fixed Header */}
-        <div className="p-6 pb-4 border-b border-slate-800 flex items-start justify-between gap-4 shrink-0 bg-slate-900/90 backdrop-blur-md">
-          <div className="flex-1 min-w-0 pr-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 font-mono flex items-center gap-2 flex-wrap">
+        <div className="p-4 sm:p-6 pb-3 sm:pb-4 border-b border-slate-800 flex items-start justify-between gap-3 sm:gap-4 shrink-0 bg-slate-900/95 backdrop-blur-md">
+          <div className="flex-1 min-w-0 pr-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 font-mono flex items-center gap-1.5 sm:gap-2 flex-wrap">
               <span>{issue.category || "General Incident"}</span>
               <span>•</span>
               <span>Priority: {issue.priority || "Medium"}</span>
               <span>•</span>
-              <span>Reference: #{issue.complaintId}</span>
+              <span>Ref: #{issue.complaintId}</span>
             </span>
-            <h3 className="font-display font-extrabold text-xl md:text-2xl text-white mt-1 truncate">
+            <h3 className="font-display font-extrabold text-lg sm:text-2xl text-white mt-1 break-words leading-tight">
               {issue.title}
             </h3>
             <div className="flex items-center gap-2 mt-2 text-xs text-gray-400 flex-wrap">
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 min-w-0">
                 <MapPin className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
-                <span className="truncate">{locationText}</span>
+                <span className="break-words font-medium">{locationText}</span>
               </div>
               <span className={getStatusBadgeClass(issue.status as string)}>{issue.status}</span>
               <span>•</span>
@@ -111,8 +111,8 @@ export default function ComplaintDetailsModal({ issue, user, onClose, onRefresh 
         </div>
 
         {/* Scrollable Body */}
-        <div className="p-6 flex-1 min-h-0 overflow-y-auto flex flex-col gap-5">
-          <p className="text-xs text-gray-300 leading-relaxed bg-slate-800/40 p-3 rounded-xl border border-slate-800/60 italic">
+        <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 sm:gap-5 min-w-0 break-words">
+          <p className="text-xs text-gray-300 leading-relaxed bg-slate-800/40 p-3 rounded-xl border border-slate-800/60 italic break-words">
             "{issue.description}"
           </p>
           {(issue.latitude || issue.longitude) && (

@@ -182,11 +182,9 @@ export default function App() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[var(--bg-void)] flex flex-col items-center justify-center gap-4 text-left">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[var(--cyan)] to-[var(--blue)] flex items-center justify-center shadow-[0_0_20px_var(--cyan)] animate-spin">
-          <span className="w-6 h-6 rounded-lg bg-slate-900" />
-        </div>
-        <span className="text-xs uppercase font-bold tracking-widest text-[var(--cyan)] font-mono animate-pulse">
-          NexCivic Core Loading...
+        <div className="w-10 h-10 border-4 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
+        <span className="text-xs font-mono uppercase tracking-widest text-cyan-400 font-bold animate-pulse">
+          Initializing Platform...
         </span>
       </div>
     );
